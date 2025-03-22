@@ -1,36 +1,88 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Bible Cross-References Graph Visualization
 
-## Getting Started
+This application visualizes cross-references in the Bible using a graph database (Neo4j) and React Flow.
 
-First, run the development server:
+## Prerequisites
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
+- Node.js 18+ and npm
+- Python 3.8+
+- Neo4j Database (local installation or cloud instance)
+- The Bible XML file in Chinese (CUVS version)
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## Setup
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+1. Install Neo4j:
+   - Download and install Neo4j Desktop from https://neo4j.com/download/
+   - Create a new database
+   - Set a password and start the database
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+2. Configure the backend:
+   ```bash
+   cd backend
+   pip install -r requirements.txt
+   cp .env.example .env
+   # Edit .env with your Neo4j credentials
+   ```
 
-## Learn More
+3. Import the Bible data:
+   ```bash
+   cd backend
+   python app/import_bible.py
+   ```
 
-To learn more about Next.js, take a look at the following resources:
+4. Start the backend server:
+   ```bash
+   cd backend
+   uvicorn app.main:app --reload
+   ```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+5. Install frontend dependencies:
+   ```bash
+   npm install
+   ```
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+6. Start the frontend development server:
+   ```bash
+   npm run dev
+   ```
 
-## Deploy on Vercel
+## Usage
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+1. Open your browser and navigate to http://localhost:3000
+2. The graph visualization will show Bible verses and their cross-references
+3. Use the controls to zoom, pan, and interact with the graph
+4. Click on nodes to see more details about specific verses
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## Features
+
+- Interactive graph visualization of Bible cross-references
+- Real-time data fetching from Neo4j database
+- Smooth animations and transitions
+- Responsive design
+- Zoom and pan controls
+- Node and edge highlighting
+
+## API Endpoints
+
+- `GET /`: Health check endpoint
+- `GET /verses/{book}/{chapter}/{verse}`: Get a specific verse
+- `GET /cross-references/{book}/{chapter}/{verse}`: Get cross-references for a verse
+- `GET /graph-data`: Get graph data for visualization
+
+## Technologies Used
+
+- Frontend:
+  - Next.js 14
+  - React Flow
+  - TypeScript
+  - Tailwind CSS
+
+- Backend:
+  - FastAPI
+  - Neo4j
+  - Python
+  - XML parsing
+
+## License
+
+MIT
