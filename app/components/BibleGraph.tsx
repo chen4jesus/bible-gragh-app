@@ -106,8 +106,12 @@ const nodeTypes: NodeTypes = {
 const DEFAULT_POSITION: XYPosition = { x: 0, y: 0 }
 
 function BibleGraphContent() {
-  const [nodes, setNodes] = useState<FlowNode[]>([])
-  const [edges, setEdges] = useState<Edge[]>([])
+  // Internal state for React Flow
+  const [flowNodes, setFlowNodes] = useState<FlowNode[]>([])
+  const [flowEdges, setFlowEdges] = useState<Edge[]>([])
+  const [bibleNodes, setBibleNodes] = useState<BibleNode[]>([])
+  
+  // Application state
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [selectedVerse, setSelectedVerse] = useState<VerseData | null>(null)
@@ -118,7 +122,6 @@ function BibleGraphContent() {
   const [showAddNode, setShowAddNode] = useState(false)
   const [showEditNode, setShowEditNode] = useState<string | null>(null)
   const [connecting, setConnecting] = useState(false)
-  const [bibleNodes, setBibleNodes] = useState<BibleNode[]>([])
 
   const {
     readingHistory,
@@ -141,20 +144,158 @@ function BibleGraphContent() {
     isBookmarked,
   } = useBibleReader()
 
-  const { getNodes, getNode, setNodes: setFlowNodes } = useReactFlow<FlowNode>()
+  const { getNodes, getNode } = useReactFlow<FlowNode>()
   const reactFlowInstance = useReactFlow<FlowNode>()
 
-  // Update nodes when customNodes or bibleNodes change
+  // Load initial Bible graph data
   useEffect(() => {
-    const newCustomNodes: CustomNodeType[] = customNodes.map((node) => ({
+    async function fetchGraphData() {
+      try {
+        setLoading(true)
+        setError(null)
+        console.log('Fetching graph data...')
+        
+        const response = await fetch('http://localhost:8000/graph-data')
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`)
+        }
+        
+        const data: GraphData[] = await response.json()
+        console.log(`Received ${data.length} records from API`)
+        
+        if (data.length === 0) {
+          setError('No graph data available')
+          return
+        }
+        
+        // Extract unique books
+        const uniqueBooks = Array.from(
+          new Set([
+            ...data.map((item) => item.source_book),
+            ...data.map((item) => item.target_book),
+          ])
+        ).sort()
+        setBooks(uniqueBooks)
+        
+        // Create nodes and edges from the data
+        const newNodes: BibleNode[] = []
+        const newEdges: Edge[] = []
+        const nodeMap = new Map<string, BibleNode>()
+
+        data.forEach((item, index) => {
+          // Create source node
+          const sourceId = `${item.source_book}-${item.source_chapter}-${item.source_verse}`
+          if (!nodeMap.has(sourceId)) {
+            const node: BibleNode = {
+              id: sourceId,
+              type: 'default',
+              position: { x: index * 250, y: 0 },
+              data: {
+                label: `${item.source_book} ${item.source_chapter}:${item.source_verse}`,
+                book: item.source_book,
+                chapter: item.source_chapter,
+                verse: item.source_verse,
+              },
+              sourcePosition: Position.Right,
+              targetPosition: Position.Left,
+              style: {
+                ...nodeStyle,
+                background: getNodeColor(item.source_book),
+              },
+            }
+            nodeMap.set(sourceId, node)
+            newNodes.push(node)
+          }
+
+          // Create target node
+          const targetId = `${item.target_book}-${item.target_chapter}-${item.target_verse}`
+          if (!nodeMap.has(targetId)) {
+            const node: BibleNode = {
+              id: targetId,
+              type: 'default',
+              position: { x: index * 250, y: 150 },
+              data: {
+                label: `${item.target_book} ${item.target_chapter}:${item.target_verse}`,
+                book: item.target_book,
+                chapter: item.target_chapter,
+                verse: item.target_verse,
+              },
+              sourcePosition: Position.Right,
+              targetPosition: Position.Left,
+              style: {
+                ...nodeStyle,
+                background: getNodeColor(item.target_book),
+              },
+            }
+            nodeMap.set(targetId, node)
+            newNodes.push(node)
+          }
+
+          // Create edge
+          newEdges.push({
+            id: `${sourceId}-${targetId}`,
+            source: sourceId,
+            target: targetId,
+            type: 'smoothstep',
+            animated: true,
+            style: edgeStyle,
+          })
+        })
+
+        console.log(`Created ${newNodes.length} nodes and ${newEdges.length} edges`)
+        
+        // Set initial flow state
+        setBibleNodes(newNodes)
+        setFlowEdges(newEdges)
+        setFlowNodes(newNodes)
+      } catch (error) {
+        console.error('Error fetching graph data:', error)
+        setError(error instanceof Error ? error.message : 'An error occurred')
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    fetchGraphData()
+  }, []) // Empty dependency array - only run once on mount
+
+  // Update flow nodes when customNodes change
+  useEffect(() => {
+    const flowCustomNodes: CustomNodeType[] = customNodes.map((node) => ({
       id: node.id,
       type: 'custom',
       position: node.position,
       data: node,
     }))
 
-    setNodes([...bibleNodes, ...newCustomNodes])
-  }, [customNodes, bibleNodes])
+    // Combine Bible nodes with custom nodes
+    setFlowNodes([...bibleNodes, ...flowCustomNodes])
+  // }, [customNodes, bibleNodes]) // Only depend on customNodes and bibleNodes
+}, [bibleNodes])
+  const onNodesChange = useCallback(
+    (changes: NodeChange[]) => {
+      // Handle position changes for custom nodes
+      changes.forEach((change) => {
+        if (change.type === 'position' && change.position) {
+          const node = flowNodes.find((n) => n.id === change.id)
+          if (node && !('book' in node.data)) {
+            updateCustomNodePosition(node.id, change.position)
+          }
+        }
+      })
+
+      // Update flow nodes with proper typing
+      setFlowNodes((nds) => applyNodeChanges(changes, nds) as unknown as FlowNode[])
+    },
+    [flowNodes, updateCustomNodePosition]
+  )
+
+  const onEdgesChange = useCallback(
+    (changes: EdgeChange[]) => {
+      setFlowEdges((eds) => applyEdgeChanges(changes, eds))
+    },
+    []
+  )
 
   const handleAddCustomNode = useCallback((nodeData: CustomNodeData) => {
     const viewport = reactFlowInstance.getViewport()
@@ -169,39 +310,6 @@ function BibleGraphContent() {
     updateCustomNode(id, nodeData)
     setShowEditNode(null)
   }, [updateCustomNode])
-
-  const onNodesChange = useCallback(
-    (changes: NodeChange[]) => {
-      // Handle position changes for custom nodes
-      changes.forEach((change) => {
-        if (change.type === 'position' && change.position) {
-          const node = nodes.find((n) => n.id === change.id)
-          if (node && !('book' in node.data)) {
-            updateCustomNodePosition(node.id, change.position)
-          }
-        }
-      })
-
-      // Apply changes to nodes state
-      const updatedNodes = applyNodeChanges(changes, nodes) as FlowNode[]
-      
-      // Update bibleNodes if the change affects them
-      const updatedBibleNodes = updatedNodes.filter((node): node is BibleNode => 'book' in node.data)
-      if (updatedBibleNodes.length !== bibleNodes.length) {
-        setBibleNodes(updatedBibleNodes)
-      }
-
-      setNodes(updatedNodes)
-    },
-    [nodes, updateCustomNodePosition, bibleNodes]
-  )
-
-  const onEdgesChange = useCallback(
-    (changes: EdgeChange[]) => {
-      setEdges((eds) => applyEdgeChanges(changes, eds))
-    },
-    []
-  )
 
   const onNodeClick = useCallback(async (event: React.MouseEvent, node: FlowNode) => {
     try {
@@ -252,116 +360,8 @@ function BibleGraphContent() {
       : theme.colors.gray[50]
   }
 
-  const fetchGraphData = useCallback(async () => {
-    try {
-      setLoading(true)
-      setError(null)
-      console.log('Fetching graph data...')
-      
-      const response = await fetch('http://localhost:8000/graph-data')
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`)
-      }
-      
-      const data: GraphData[] = await response.json()
-      console.log(`Received ${data.length} records from API`)
-      
-      if (data.length === 0) {
-        setError('No graph data available')
-        return
-      }
-      
-      // Extract unique books
-      const uniqueBooks = Array.from(
-        new Set([
-          ...data.map((item) => item.source_book),
-          ...data.map((item) => item.target_book),
-        ])
-      ).sort()
-      setBooks(uniqueBooks)
-      
-      // Create nodes and edges from the data
-      const newNodes: BibleNode[] = []
-      const newEdges: Edge[] = []
-      const nodeMap = new Map<string, BibleNode>()
-
-      data.forEach((item, index) => {
-        // Create source node
-        const sourceId = `${item.source_book}-${item.source_chapter}-${item.source_verse}`
-        if (!nodeMap.has(sourceId)) {
-          const node: BibleNode = {
-            id: sourceId,
-            type: 'default',
-            position: { x: index * 250, y: 0 },
-            data: {
-              label: `${item.source_book} ${item.source_chapter}:${item.source_verse}`,
-              book: item.source_book,
-              chapter: item.source_chapter,
-              verse: item.source_verse,
-            },
-            sourcePosition: Position.Right,
-            targetPosition: Position.Left,
-            style: {
-              ...nodeStyle,
-              background: getNodeColor(item.source_book),
-            },
-          }
-          nodeMap.set(sourceId, node)
-          newNodes.push(node)
-        }
-
-        // Create target node
-        const targetId = `${item.target_book}-${item.target_chapter}-${item.target_verse}`
-        if (!nodeMap.has(targetId)) {
-          const node: BibleNode = {
-            id: targetId,
-            type: 'default',
-            position: { x: index * 250, y: 150 },
-            data: {
-              label: `${item.target_book} ${item.target_chapter}:${item.target_verse}`,
-              book: item.target_book,
-              chapter: item.target_chapter,
-              verse: item.target_verse,
-            },
-            sourcePosition: Position.Right,
-            targetPosition: Position.Left,
-            style: {
-              ...nodeStyle,
-              background: getNodeColor(item.target_book),
-            },
-          }
-          nodeMap.set(targetId, node)
-          newNodes.push(node)
-        }
-
-        // Create edge
-        newEdges.push({
-          id: `${sourceId}-${targetId}`,
-          source: sourceId,
-          target: targetId,
-          type: 'smoothstep',
-          animated: true,
-          style: edgeStyle,
-        })
-      })
-
-      console.log(`Created ${newNodes.length} nodes and ${newEdges.length} edges`)
-      setBibleNodes(newNodes)
-      setEdges(newEdges)
-    } catch (error) {
-      console.error('Error fetching graph data:', error)
-      setError(error instanceof Error ? error.message : 'An error occurred')
-    } finally {
-      setLoading(false)
-    }
-  }, [])
-
-  useEffect(() => {
-    fetchGraphData()
-  }, [fetchGraphData])
-
   // Filter nodes based on search term and selected book
-  const filteredNodes = nodes.filter((node) => {
+  const filteredNodes = flowNodes.filter((node) => {
     const matchesSearch = searchTerm
       ? node.data.label.toLowerCase().includes(searchTerm.toLowerCase())
       : true
@@ -372,7 +372,7 @@ function BibleGraphContent() {
   })
 
   // Filter edges to only include connections between visible nodes
-  const filteredEdges = edges.filter((edge) => {
+  const filteredEdges = flowEdges.filter((edge) => {
     const sourceNode = filteredNodes.find((node) => node.id === edge.source)
     const targetNode = filteredNodes.find((node) => node.id === edge.target)
     return sourceNode && targetNode
@@ -380,7 +380,7 @@ function BibleGraphContent() {
 
   const onConnect = useCallback((connection: Connection) => {
     if (!connection.source || !connection.target) return
-    setEdges((eds) => [
+    setFlowEdges((eds) => [
       ...eds,
       {
         id: `edge-${connection.source}-${connection.target}`,
@@ -507,7 +507,7 @@ function BibleGraphContent() {
         {showEditNode && (
           <Panel position="top-center">
             <AddNodePanel
-              initialData={nodes.find((n) => n.id === showEditNode && !('book' in n.data))?.data as CustomNodeData}
+              initialData={flowNodes.find((n) => n.id === showEditNode && !('book' in n.data))?.data as CustomNodeData}
               onAddNode={(data) => handleUpdateCustomNode(showEditNode, data)}
               onDelete={() => {
                 deleteCustomNode(showEditNode)
