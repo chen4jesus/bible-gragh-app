@@ -30,7 +30,7 @@ export default function Home() {
           className="bg-white"
         >
           <div className="h-full p-4">
-            <h2 className="text-lg font-semibold mb-4">圣经导航</h2>
+            <h2 className="text-lg font-semibold mb-4">圣经知识图谱</h2>
             <BibleNavigator
               initialBook={currentVerse.book}
               initialChapter={currentVerse.chapter}
