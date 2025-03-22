@@ -24,9 +24,9 @@ export default function Home() {
       >
         {/* Left Panel - Bible Navigator */}
         <ResizablePanel
-          defaultSize={25}
+          defaultSize={50}
           minSize={20}
-          maxSize={40}
+          maxSize={50}
           className="bg-white"
         >
           <div className="h-full p-4">

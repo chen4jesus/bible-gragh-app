@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import { BibleData } from '../lib/bible-loader'
 import { bibleData } from '../data/bible-data'
 
@@ -20,10 +20,50 @@ export function BibleNavigator({
   const [selectedBook, setSelectedBook] = useState(initialBook)
   const [selectedChapter, setSelectedChapter] = useState(initialChapter)
   const [selectedVerse, setSelectedVerse] = useState(initialVerse)
+  const [highlightedVerse, setHighlightedVerse] = useState<number | null>(null)
 
   // Find current book and chapter
   const currentBook = bibleData.books.find(b => b.name === selectedBook)
-  const currentChapter = currentBook?.chapters.find(c => c.number === selectedChapter)
+  const currentChapter = currentBook?.chapters.find(c => c.number == selectedChapter)
+
+  // Function to scroll to and highlight a verse
+  const focusVerse = useCallback((verseNumber: number) => {
+    setSelectedVerse(verseNumber)
+    setHighlightedVerse(verseNumber)
+
+    // Scroll the verse into view
+    const verseElement = document.getElementById(`verse-${verseNumber}`)
+    if (verseElement) {
+      // First scroll the container to ensure the verse is visible
+      const container = document.querySelector('.scrollbar-thin')
+      if (container) {
+        container.scrollTop = 0 // Reset scroll position first
+      }
+
+      // Then scroll to the verse with a slight delay to ensure smooth animation
+      setTimeout(() => {
+        verseElement.scrollIntoView({ 
+          behavior: 'smooth', 
+          block: 'center'
+        })
+        
+        // Add extra focus effect
+        verseElement.classList.add('ring-4', 'ring-yellow-200', 'ring-opacity-50')
+        
+        // Remove focus effect after animation
+        setTimeout(() => {
+          verseElement.classList.remove('ring-4', 'ring-yellow-200', 'ring-opacity-50')
+        }, 2000)
+      }, 100)
+    }
+
+    // Remove highlight after delay
+    const timer = setTimeout(() => {
+      setHighlightedVerse(null)
+    }, 2000)
+
+    return () => clearTimeout(timer)
+  }, [])
 
   // Initialize with first available values if current selections are invalid
   useEffect(() => {
@@ -33,8 +73,9 @@ export function BibleNavigator({
       if (firstBook.chapters.length > 0) {
         setSelectedChapter(firstBook.chapters[0].number)
         if (firstBook.chapters[0].verses.length > 0) {
-          setSelectedVerse(firstBook.chapters[0].verses[0].verse)
-          onVerseSelect(firstBook.name, firstBook.chapters[0].number, firstBook.chapters[0].verses[0].verse)
+          const firstVerse = firstBook.chapters[0].verses[0].verse
+          setSelectedVerse(firstVerse)
+          onVerseSelect(firstBook.name, firstBook.chapters[0].number, firstVerse)
         }
       }
     }
@@ -50,30 +91,60 @@ export function BibleNavigator({
       const firstChapter = book.chapters[0]
       setSelectedChapter(firstChapter.number)
       // Reset to first verse of first chapter
-      setSelectedVerse(firstChapter.verses[0].verse)
-      onVerseSelect(newBook, firstChapter.number, firstChapter.verses[0].verse)
+      const firstVerse = firstChapter.verses[0].verse
+      setSelectedVerse(firstVerse)
+      onVerseSelect(newBook, firstChapter.number, firstVerse)
+      focusVerse(firstVerse)
     }
   }
 
   const handleChapterChange = (event: React.ChangeEvent<HTMLSelectElement>) => {
-    const newChapterNum = parseInt(event.target.value)
+    const newChapterNum = parseInt(event.target.value, 10)
     if (currentBook) {
-      const newChapter = currentBook.chapters.find(c => c.number === newChapterNum)
+      //setSelectedBook(currentBook.name)
+      const newChapter = currentBook.chapters.find(c => c.number == newChapterNum)
       if (newChapter) {
+        // Update chapter selection
         setSelectedChapter(newChapterNum)
         // Reset to first verse of new chapter
         const firstVerse = newChapter.verses[0].verse
         setSelectedVerse(firstVerse)
+        // Notify parent component
         onVerseSelect(selectedBook, newChapterNum, firstVerse)
+        // Focus the first verse with a small delay to ensure state updates
+        setTimeout(() => {
+          focusVerse(firstVerse)
+        }, 100)
       }
     }
   }
 
   const handleVerseChange = (event: React.ChangeEvent<HTMLSelectElement>) => {
-    const newVerse = parseInt(event.target.value)
+    const newVerse = parseInt(event.target.value, 10)
     setSelectedVerse(newVerse)
     onVerseSelect(selectedBook, selectedChapter, newVerse)
+    focusVerse(newVerse)
   }
+
+  // Handle verse click
+  const handleVerseClick = (verse: number) => {
+    setSelectedVerse(verse)
+    onVerseSelect(selectedBook, selectedChapter, verse)
+    focusVerse(verse)
+  }
+
+  // Effect to ensure verse exists in current chapter
+  useEffect(() => {
+    if (currentChapter) {
+      const verseExists = currentChapter.verses.some(v => v.verse === selectedVerse)
+      if (!verseExists) {
+        const firstVerse = currentChapter.verses[0].verse
+        setSelectedVerse(firstVerse)
+        onVerseSelect(selectedBook, selectedChapter, firstVerse)
+        focusVerse(firstVerse)
+      }
+    }
+  }, [currentChapter, selectedChapter])
 
   return (
     <div className="flex flex-col h-full">
@@ -158,22 +229,28 @@ export function BibleNavigator({
               {currentChapter.verses.map(verse => (
                 <div 
                   key={verse.verse}
-                  className={`group p-4 rounded-lg transition-all duration-200 hover:bg-gray-50 ${
+                  id={`verse-${verse.verse}`}
+                  onClick={() => handleVerseClick(verse.verse)}
+                  className={`group p-4 rounded-lg transition-all duration-500 cursor-pointer ${
                     verse.verse === selectedVerse 
                       ? 'bg-blue-50 border border-blue-100 shadow-sm' 
-                      : 'border border-transparent'
+                      : verse.verse === highlightedVerse
+                      ? 'bg-yellow-50 border border-yellow-100 shadow-sm animate-pulse'
+                      : 'hover:bg-gray-50 border border-transparent'
                   }`}
                 >
                   <div className="flex items-start gap-3">
                     <span className={`inline-flex items-center justify-center w-8 h-8 rounded-full text-sm font-medium ${
                       verse.verse === selectedVerse
                         ? 'bg-blue-100 text-blue-700'
+                        : verse.verse === highlightedVerse
+                        ? 'bg-yellow-100 text-yellow-700'
                         : 'bg-gray-100 text-gray-600 group-hover:bg-gray-200'
                     }`}>
                       {verse.verse}
                     </span>
                     <span className={`flex-1 text-lg leading-relaxed ${
-                      verse.verse === selectedVerse
+                      verse.verse === selectedVerse || verse.verse === highlightedVerse
                         ? 'text-gray-900'
                         : 'text-gray-700'
                     }`}>
