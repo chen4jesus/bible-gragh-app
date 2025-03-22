@@ -59,7 +59,7 @@ async def get_cross_references(book: str, chapter: int, verse: int):
             """
             MATCH (v1:Verse)-[r:REFERENCES]->(v2:Verse)
             WHERE v1.book = $book AND v1.chapter = $chapter AND v1.verse = $verse
-            RETURN v2.book as book, v2.chapter as chapter, v2.verse as verse, v2.text as text
+            RETURN v2.book as target_book, v2.chapter as target_chapter, v2.verse as target_verse, v2.text as target_text
             """,
             book=book, chapter=chapter, verse=verse
         )

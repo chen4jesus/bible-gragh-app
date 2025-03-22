@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useState, useMemo } from 'react'
 import {
   ReactFlow,
   Node,
@@ -16,19 +16,9 @@ import {
   Position,
   Connection,
   useReactFlow,
-  NodeTypes,
-  NodeProps,
-  ReactFlowInstance,
-  XYPosition,
   ReactFlowProvider,
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
-import { useBibleReader } from '../hooks/useBibleReader'
-import { ReadingPanel } from './ReadingPanel'
-import { HistoryPanel } from './HistoryPanel'
-import { AddNodePanel } from './AddNodePanel'
-import { CustomNode } from './CustomNode'
-import { Button } from './ui/Button'
 import { theme } from '../styles/theme'
 
 interface GraphData {
@@ -54,16 +44,8 @@ interface BibleNodeData extends Record<string, unknown> {
   verse: number
 }
 
-export interface CustomNodeData extends Record<string, unknown> {
-  label: string
-  type: 'note' | 'commentary' | 'reflection'
-  content: string
-  createdAt: string
-}
-
 type BibleNode = Node<BibleNodeData>
-type CustomNodeType = Node<CustomNodeData>
-type FlowNode = BibleNode | CustomNodeType
+type FlowNode = BibleNode
 
 type BookName = keyof typeof theme.colors.books
 
@@ -93,62 +75,45 @@ const edgeStyle = {
   },
 }
 
-const typeColors = {
-  note: theme.colors.primary[500],
-  commentary: theme.colors.primary[600],
-  reflection: theme.colors.primary[700],
-} as const
-
-const nodeTypes: NodeTypes = {
-  custom: CustomNode as unknown as React.ComponentType<NodeProps>,
+// Add default edge options
+const defaultEdgeOptions = {
+  type: 'smoothstep',
+  animated: true,
+  style: edgeStyle,
 }
 
-const DEFAULT_POSITION: XYPosition = { x: 0, y: 0 }
+interface BibleGraphProps {
+  selectedVerse?: {
+    book: string
+    chapter: number
+    verse: number
+  } | null
+}
 
-function BibleGraphContent() {
+function BibleGraphContent({ selectedVerse }: BibleGraphProps) {
   // Internal state for React Flow
-  const [flowNodes, setFlowNodes] = useState<FlowNode[]>([])
+  const [flowNodes, setFlowNodes] = useState<Node<BibleNodeData>[]>([])
   const [flowEdges, setFlowEdges] = useState<Edge[]>([])
-  const [bibleNodes, setBibleNodes] = useState<BibleNode[]>([])
+  const [isInitialized, setIsInitialized] = useState(false)
   
   // Application state
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
-  const [selectedVerse, setSelectedVerse] = useState<VerseData | null>(null)
+  const [activeVerse, setActiveVerse] = useState<VerseData | null>(null)
   const [searchTerm, setSearchTerm] = useState('')
   const [selectedBook, setSelectedBook] = useState<string | null>(null)
   const [books, setBooks] = useState<string[]>([])
-  const [showHistory, setShowHistory] = useState(false)
-  const [showAddNode, setShowAddNode] = useState(false)
-  const [showEditNode, setShowEditNode] = useState<string | null>(null)
-  const [connecting, setConnecting] = useState(false)
-
-  const {
-    readingHistory,
-    bookmarks,
-    notes,
-    customNodes,
-    currentVerseId,
-    addToHistory,
-    addBookmark,
-    removeBookmark,
-    addNote,
-    updateNote,
-    deleteNote,
-    addCustomNode,
-    updateCustomNode,
-    updateCustomNodePosition,
-    deleteCustomNode,
-    setCurrentVerse,
-    getVerseNotes,
-    isBookmarked,
-  } = useBibleReader()
 
   const { getNodes, getNode } = useReactFlow<FlowNode>()
   const reactFlowInstance = useReactFlow<FlowNode>()
 
+  // Add new state for expanded nodes
+  const [expandedNodes, setExpandedNodes] = useState<Set<string>>(new Set())
+
   // Load initial Bible graph data
   useEffect(() => {
+    if (isInitialized) return
+
     async function fetchGraphData() {
       try {
         setLoading(true)
@@ -231,23 +196,20 @@ function BibleGraphContent() {
             newNodes.push(node)
           }
 
-          // Create edge
+          // Create edge with consistent styling
           newEdges.push({
             id: `${sourceId}-${targetId}`,
             source: sourceId,
             target: targetId,
-            type: 'smoothstep',
-            animated: true,
-            style: edgeStyle,
+            ...defaultEdgeOptions,
           })
         })
 
         console.log(`Created ${newNodes.length} nodes and ${newEdges.length} edges`)
         
-        // Set initial flow state
-        setBibleNodes(newNodes)
-        setFlowEdges(newEdges)
         setFlowNodes(newNodes)
+        setFlowEdges(newEdges)
+        setIsInitialized(true)
       } catch (error) {
         console.error('Error fetching graph data:', error)
         setError(error instanceof Error ? error.message : 'An error occurred')
@@ -257,37 +219,13 @@ function BibleGraphContent() {
     }
 
     fetchGraphData()
-  }, []) // Empty dependency array - only run once on mount
+  }, [isInitialized])
 
-  // Update flow nodes when customNodes change
-  useEffect(() => {
-    const flowCustomNodes: CustomNodeType[] = customNodes.map((node) => ({
-      id: node.id,
-      type: 'custom',
-      position: node.position,
-      data: node,
-    }))
-
-    // Combine Bible nodes with custom nodes
-    setFlowNodes([...bibleNodes, ...flowCustomNodes])
-  // }, [customNodes, bibleNodes]) // Only depend on customNodes and bibleNodes
-}, [bibleNodes])
   const onNodesChange = useCallback(
     (changes: NodeChange[]) => {
-      // Handle position changes for custom nodes
-      changes.forEach((change) => {
-        if (change.type === 'position' && change.position) {
-          const node = flowNodes.find((n) => n.id === change.id)
-          if (node && !('book' in node.data)) {
-            updateCustomNodePosition(node.id, change.position)
-          }
-        }
-      })
-
-      // Update flow nodes with proper typing
-      setFlowNodes((nds) => applyNodeChanges(changes, nds) as unknown as FlowNode[])
+      setFlowNodes((nds) => applyNodeChanges(changes, nds) as Node<BibleNodeData>[])
     },
-    [flowNodes, updateCustomNodePosition]
+    []
   )
 
   const onEdgesChange = useCallback(
@@ -297,62 +235,177 @@ function BibleGraphContent() {
     []
   )
 
-  const handleAddCustomNode = useCallback((nodeData: CustomNodeData) => {
-    const viewport = reactFlowInstance.getViewport()
-    const pos = {
-      x: -viewport.x + window.innerWidth / 2,
-      y: -viewport.y + window.innerHeight / 2,
-    }
-    addCustomNode(nodeData, pos)
-  }, [reactFlowInstance, addCustomNode])
-
-  const handleUpdateCustomNode = useCallback((id: string, nodeData: Partial<CustomNodeData>) => {
-    updateCustomNode(id, nodeData)
-    setShowEditNode(null)
-  }, [updateCustomNode])
-
-  const onNodeClick = useCallback(async (event: React.MouseEvent, node: FlowNode) => {
+  const onNodeClick = useCallback(async (event: React.MouseEvent, node: Node<BibleNodeData>) => {
     try {
-      if ('book' in node.data) {
-        // Handle Bible node click
-        const { book, chapter, verse } = node.data
-        const response = await fetch(
-          `http://localhost:8000/verses/${book}/${chapter}/${verse}`
-        )
-        if (!response.ok) {
-          throw new Error('Failed to fetch verse details')
-        }
-        const data = await response.json()
-        setSelectedVerse(data)
-        const verseId = `${data.book}-${data.chapter}-${data.verse}`
-        setCurrentVerse(verseId)
-      } else {
-        // Handle custom node click - open edit panel
-        setShowEditNode(node.id)
+      const { book, chapter, verse } = node.data
+      const response = await fetch(
+        `http://localhost:8000/verses/${book}/${chapter}/${verse}`
+      )
+      if (!response.ok) {
+        throw new Error('Failed to fetch verse details')
       }
+      const data = await response.json()
+      setActiveVerse(data)
     } catch (err) {
       console.error('Error handling node click:', err)
       setError('Failed to load verse data')
     }
-  }, [setCurrentVerse])
+  }, [])
 
-  const handleAddNote = useCallback((text: string) => {
-    if (selectedVerse) {
-      const verseId = `${selectedVerse.book}-${selectedVerse.chapter}-${selectedVerse.verse}`
-      addNote(verseId, text)
+  // Add helper function for calculating optimal layout
+  const calculateOptimalLayout = useCallback((
+    centerNode: Node<BibleNodeData>,
+    relationshipCount: number,
+    existingNodes: Node<BibleNodeData>[]
+  ) => {
+    // Calculate the average distance between existing nodes
+    let avgDistance = 250 // default spacing
+    if (existingNodes.length > 1) {
+      const distances: number[] = []
+      existingNodes.forEach((node, i) => {
+        if (i > 0) {
+          const prevNode = existingNodes[i - 1]
+          const distance = Math.sqrt(
+            Math.pow(node.position.x - prevNode.position.x, 2) +
+            Math.pow(node.position.y - prevNode.position.y, 2)
+          )
+          distances.push(distance)
+        }
+      })
+      avgDistance = distances.length > 0 
+        ? distances.reduce((a, b) => a + b, 0) / distances.length
+        : 250
     }
-  }, [selectedVerse, addNote])
 
-  const handleToggleBookmark = useCallback(() => {
-    if (selectedVerse) {
-      const verseId = `${selectedVerse.book}-${selectedVerse.chapter}-${selectedVerse.verse}`
-      if (isBookmarked(verseId)) {
-        removeBookmark(verseId)
-      } else {
-        addBookmark(verseId, 'Quick bookmark')
+    // Adjust radius based on number of relationships and average distance
+    const baseRadius = Math.min(avgDistance * 0.8, 300)
+    const radius = Math.max(
+      baseRadius,
+      Math.min(baseRadius * Math.sqrt(relationshipCount / 4), 400)
+    )
+
+    // Calculate optimal positions in a circular layout
+    const positions: { x: number; y: number }[] = []
+    const angleStep = (2 * Math.PI) / relationshipCount
+    
+    for (let i = 0; i < relationshipCount; i++) {
+      const angle = i * angleStep
+      // Add some randomness to prevent perfect circle formation
+      const radiusVariation = radius * (0.9 + Math.random() * 0.2)
+      positions.push({
+        x: centerNode.position.x + Math.cos(angle) * radiusVariation,
+        y: centerNode.position.y + Math.sin(angle) * radiusVariation
+      })
+    }
+
+    return positions
+  }, [])
+
+  // Update double click handler
+  const onNodeDoubleClick = useCallback(async (event: React.MouseEvent, clickedNode: Node<BibleNodeData>) => {
+    try {
+      const { book, chapter, verse } = clickedNode.data
+      const nodeId = `${book}-${chapter}-${verse}`
+      
+      // Toggle expanded state
+      const newExpandedNodes = new Set(expandedNodes)
+      if (expandedNodes.has(nodeId)) {
+        newExpandedNodes.delete(nodeId)
+        setExpandedNodes(newExpandedNodes)
+        return
       }
+
+      // Fetch related verses from the API
+      const response = await fetch(
+        `http://localhost:8000/cross-references/${book}/${chapter}/${verse}`
+      )
+      if (!response.ok) {
+        throw new Error('Failed to fetch verse cross-references')
+      }
+      
+      const relationships: GraphData[] = await response.json()
+      console.log(`Received ${relationships.length} relationships for ${nodeId}`)
+
+      // Calculate optimal positions for new nodes
+      const positions = calculateOptimalLayout(clickedNode, relationships.length, flowNodes)
+
+      // Create new nodes and edges
+      const newNodes: BibleNode[] = []
+      const newEdges: Edge[] = []
+      const existingNodeIds = new Set(flowNodes.map(n => n.id))
+
+      relationships.forEach((rel, index) => {
+        const targetId = `${rel.target_book}-${rel.target_chapter}-${rel.target_verse}`
+        
+        // Only add new nodes if they don't exist
+        if (!existingNodeIds.has(targetId)) {
+          const newNode: BibleNode = {
+            id: targetId,
+            type: 'default',
+            position: positions[index],
+            data: {
+              label: `${rel.target_book} ${rel.target_chapter}:${rel.target_verse}`,
+              book: rel.target_book,
+              chapter: rel.target_chapter,
+              verse: rel.target_verse,
+            },
+            sourcePosition: Position.Right,
+            targetPosition: Position.Left,
+            style: {
+              ...nodeStyle,
+              background: getNodeColor(rel.target_book),
+            },
+          }
+          newNodes.push(newNode)
+        }
+
+        // Add edge with consistent styling
+        newEdges.push({
+          id: `${nodeId}-${targetId}`,
+          source: nodeId,
+          target: targetId,
+          ...defaultEdgeOptions,
+        })
+      })
+
+      // Update state
+      setFlowNodes(nodes => [...nodes, ...newNodes])
+      setFlowEdges(edges => [...edges, ...newEdges])
+      setExpandedNodes(new Set([...expandedNodes, nodeId]))
+
+      // Center the view on the expanded area with a smoother transition
+      if (reactFlowInstance) {
+        // Calculate the bounding box of all visible nodes
+        const visibleNodes = [...flowNodes, ...newNodes].filter(node => {
+          const isExpanded = expandedNodes.has(node.id)
+          const isNewlyExpanded = node.id === nodeId
+          const isRelated = newEdges.some(e => 
+            e.source === node.id || e.target === node.id
+          )
+          return isExpanded || isNewlyExpanded || isRelated
+        })
+
+        if (visibleNodes.length > 0) {
+          const xCoords = visibleNodes.map(n => n.position.x)
+          const yCoords = visibleNodes.map(n => n.position.y)
+          const minX = Math.min(...xCoords)
+          const maxX = Math.max(...xCoords)
+          const minY = Math.min(...yCoords)
+          const maxY = Math.max(...yCoords)
+          const centerX = (minX + maxX) / 2
+          const centerY = (minY + maxY) / 2
+
+          reactFlowInstance.setCenter(centerX, centerY, { 
+            duration: 800,
+            zoom: Math.min(1, 800 / Math.max(maxX - minX, maxY - minY))
+          })
+        }
+      }
+    } catch (err) {
+      console.error('Error handling node double click:', err)
+      setError('Failed to load verse relationships')
     }
-  }, [selectedVerse, isBookmarked, removeBookmark, addBookmark])
+  }, [expandedNodes, flowNodes, reactFlowInstance, calculateOptimalLayout])
 
   const getNodeColor = (bookName: string) => {
     return (bookName in nodeColors)
@@ -360,38 +413,139 @@ function BibleGraphContent() {
       : theme.colors.gray[50]
   }
 
-  // Filter nodes based on search term and selected book
-  const filteredNodes = flowNodes.filter((node) => {
-    const matchesSearch = searchTerm
-      ? node.data.label.toLowerCase().includes(searchTerm.toLowerCase())
-      : true
-    const matchesBook = selectedBook 
-      ? 'book' in node.data && node.data.book === selectedBook 
-      : true
-    return matchesSearch && matchesBook
-  })
+  // Filter nodes based on search term, selected book, and selected verse
+  const filteredNodes = useMemo(() => {
+    if (!flowNodes.length) return []
 
-  // Filter edges to only include connections between visible nodes
-  const filteredEdges = flowEdges.filter((edge) => {
-    const sourceNode = filteredNodes.find((node) => node.id === edge.source)
-    const targetNode = filteredNodes.find((node) => node.id === edge.target)
-    return sourceNode && targetNode
-  })
+    return flowNodes.map((node) => {
+      const matchesSearch = searchTerm
+        ? node.data.label.toLowerCase().includes(searchTerm.toLowerCase())
+        : true
+      
+      // If a verse is selected, show it and its connected nodes
+      if (selectedVerse) {
+        const selectedVerseId = `${selectedVerse.book}-${selectedVerse.chapter}-${selectedVerse.verse}`
+        const connectedEdges = flowEdges.filter(
+          e => e.source === selectedVerseId || e.target === selectedVerseId
+        )
+        const isConnected = node.id === selectedVerseId || 
+          connectedEdges.some(e => e.source === node.id || e.target === node.id)
+        
+        // Show expanded nodes and their connections
+        const isExpanded = expandedNodes.has(node.id) ||
+          Array.from(expandedNodes).some(expandedId => {
+            return flowEdges.some(e => 
+              (e.source === expandedId && e.target === node.id) ||
+              (e.target === expandedId && e.source === node.id)
+            )
+          })
+        
+        // Update node style based on connection and expansion status
+        return {
+          ...node,
+          hidden: !(isConnected || isExpanded) || !matchesSearch,
+          style: {
+            ...node.style,
+            opacity: (isConnected || isExpanded) ? 1 : 0.3,
+            borderWidth: node.id === selectedVerseId || expandedNodes.has(node.id) ? 2 : 1,
+            borderColor: expandedNodes.has(node.id) 
+              ? theme.colors.primary[700]
+              : node.id === selectedVerseId 
+                ? theme.colors.primary[500] 
+                : 'rgba(0, 0, 0, 0.1)',
+            background: node.id === selectedVerseId 
+              ? theme.colors.primary[100]
+              : expandedNodes.has(node.id)
+                ? theme.colors.primary[50]
+                : getNodeColor(node.data.book),
+          },
+        }
+      }
+      
+      // Otherwise, filter by selected book if any
+      const matchesBook = selectedBook 
+        ? node.data.book === selectedBook 
+        : true
 
-  const onConnect = useCallback((connection: Connection) => {
-    if (!connection.source || !connection.target) return
-    setFlowEdges((eds) => [
-      ...eds,
-      {
-        id: `edge-${connection.source}-${connection.target}`,
-        source: connection.source,
-        target: connection.target,
-        type: 'smoothstep',
-        animated: true,
-        style: edgeStyle,
-      },
-    ])
-  }, [])
+      return {
+        ...node,
+        hidden: !(matchesSearch && matchesBook),
+        style: {
+          ...node.style,
+          opacity: 1,
+          borderWidth: 1,
+          borderColor: 'rgba(0, 0, 0, 0.1)',
+          background: getNodeColor(node.data.book),
+        },
+      }
+    })
+  }, [flowNodes, searchTerm, selectedBook, selectedVerse, flowEdges, expandedNodes])
+
+  // Filter and style edges based on visible nodes and selection
+  const filteredEdges = useMemo(() => {
+    if (!flowEdges.length) return []
+
+    return flowEdges.map((edge) => {
+      const sourceNode = filteredNodes.find((node) => node.id === edge.source && !node.hidden)
+      const targetNode = filteredNodes.find((node) => node.id === edge.target && !node.hidden)
+      
+      if (!sourceNode || !targetNode) {
+        return { ...edge, hidden: true }
+      }
+
+      if (selectedVerse) {
+        const selectedVerseId = `${selectedVerse.book}-${selectedVerse.chapter}-${selectedVerse.verse}`
+        const isConnected = edge.source === selectedVerseId || edge.target === selectedVerseId
+
+        return {
+          ...edge,
+          hidden: false,
+          ...defaultEdgeOptions,
+          style: {
+            ...edgeStyle,
+            opacity: isConnected ? 1 : 0.1,
+            strokeWidth: isConnected ? 3 : 1,
+            stroke: isConnected ? theme.colors.primary[500] : theme.colors.gray[400],
+          },
+        }
+      }
+
+      return {
+        ...edge,
+        hidden: false,
+        ...defaultEdgeOptions,
+      }
+    })
+  }, [flowEdges, filteredNodes, selectedVerse])
+
+  // Focus on selected verse
+  useEffect(() => {
+    if (!selectedVerse || !reactFlowInstance || !isInitialized) return
+
+    const verseId = `${selectedVerse.book}-${selectedVerse.chapter}-${selectedVerse.verse}`
+    const node = flowNodes.find(n => n.id === verseId)
+    
+    if (node) {
+      // Center view on the selected node
+      reactFlowInstance.setCenter(node.position.x, node.position.y, { duration: 800 })
+      
+      // Fetch verse text if not already active
+      if (!activeVerse || activeVerse.book !== selectedVerse.book || 
+          activeVerse.chapter !== selectedVerse.chapter || 
+          activeVerse.verse !== selectedVerse.verse) {
+        fetch(`http://localhost:8000/verses/${selectedVerse.book}/${selectedVerse.chapter}/${selectedVerse.verse}`)
+          .then(response => {
+            if (!response.ok) throw new Error('Failed to fetch verse details')
+            return response.json()
+          })
+          .then(data => setActiveVerse(data))
+          .catch(err => {
+            console.error('Error fetching verse details:', err)
+            setError('Failed to load verse data')
+          })
+      }
+    }
+  }, [selectedVerse, reactFlowInstance, isInitialized])
 
   if (loading) {
     return <div className="flex items-center justify-center h-screen">Loading graph data...</div>
@@ -402,22 +556,20 @@ function BibleGraphContent() {
   }
 
   return (
-    <div style={{ width: '100vw', height: '100vh' }}>
+    <div style={{ width: '100%', height: '100vh' }}>
       <ReactFlow
         nodes={filteredNodes}
         edges={filteredEdges}
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
         onNodeClick={onNodeClick}
-        onConnect={onConnect}
-        nodeTypes={nodeTypes}
+        onNodeDoubleClick={onNodeDoubleClick}
+        defaultEdgeOptions={defaultEdgeOptions}
         fitView
         fitViewOptions={{ padding: 0.2 }}
         minZoom={0.1}
         maxZoom={2}
         defaultViewport={{ x: 0, y: 0, zoom: 1 }}
-        onConnectStart={() => setConnecting(true)}
-        onConnectEnd={() => setConnecting(false)}
       >
         <Background
           color={theme.colors.gray[200]}
@@ -429,12 +581,7 @@ function BibleGraphContent() {
           className="bg-white shadow-lg rounded-lg"
         />
         <MiniMap
-          nodeColor={(node: FlowNode) => {
-            if ('book' in node.data) {
-              return getNodeColor(node.data.book as string)
-            }
-            return typeColors[node.data.type as keyof typeof typeColors]
-          }}
+          nodeColor={(node) => getNodeColor(node.data.book as string)}
           maskColor={theme.colors.gray[50]}
           className="bg-white shadow-lg rounded-lg"
         />
@@ -471,99 +618,24 @@ function BibleGraphContent() {
                 ))}
               </select>
             </div>
-            <div>
-              <Button
-                variant="primary"
-                onClick={() => setShowAddNode(true)}
-                className="w-full"
-              >
-                Add Custom Node
-              </Button>
-            </div>
-            <div>
-              <Button
-                variant="outline"
-                onClick={() => setShowHistory((prev) => !prev)}
-                className="w-full"
-              >
-                {showHistory ? 'Hide History' : 'Show History'}
-              </Button>
-            </div>
           </div>
         </Panel>
-        {connecting && (
-          <div className="fixed top-4 left-1/2 -translate-x-1/2 bg-white px-4 py-2 rounded-full shadow-lg text-sm text-gray-600">
-            Click another node to create a connection
-          </div>
-        )}
-        {showAddNode && (
-          <Panel position="top-center">
-            <AddNodePanel
-              onAddNode={handleAddCustomNode}
-              onClose={() => setShowAddNode(false)}
-            />
-          </Panel>
-        )}
-        {showEditNode && (
-          <Panel position="top-center">
-            <AddNodePanel
-              initialData={flowNodes.find((n) => n.id === showEditNode && !('book' in n.data))?.data as CustomNodeData}
-              onAddNode={(data) => handleUpdateCustomNode(showEditNode, data)}
-              onDelete={() => {
-                deleteCustomNode(showEditNode)
-                setShowEditNode(null)
-              }}
-              onClose={() => setShowEditNode(null)}
-            />
-          </Panel>
-        )}
-        {selectedVerse && (
+        {activeVerse && (
           <Panel position="top-right" className="bg-white p-4 rounded-lg shadow-lg">
-            <ReadingPanel
-              verse={selectedVerse}
-              notes={getVerseNotes(`${selectedVerse.book}-${selectedVerse.chapter}-${selectedVerse.verse}`).map(note => ({
-                ...note,
-                verseId: `${selectedVerse.book}-${selectedVerse.chapter}-${selectedVerse.verse}`,
-                createdAt: new Date(note.createdAt),
-              }))}
-              isBookmarked={isBookmarked(`${selectedVerse.book}-${selectedVerse.chapter}-${selectedVerse.verse}`)}
-              onAddNote={handleAddNote}
-              onUpdateNote={updateNote}
-              onDeleteNote={deleteNote}
-              onToggleBookmark={handleToggleBookmark}
-              onClose={() => setSelectedVerse(null)}
-            />
-          </Panel>
-        )}
-        {showHistory && (
-          <Panel position="bottom-right" className="bg-white p-4 rounded-lg shadow-lg">
-            <HistoryPanel
-              history={readingHistory.map(item => ({
-                ...item,
-                timestamp: new Date(item.timestamp),
-              }))}
-              bookmarks={Object.values(bookmarks).map(bookmark => ({
-                id: bookmark.id,
-                verseId: bookmark.id,
-                label: bookmark.description,
-                createdAt: new Date(bookmark.createdAt),
-              }))}
-              onSelectVerse={(verseId) => {
-                const [book, chapter, verse] = verseId.split('-')
-                fetch(
-                  `http://localhost:8000/verses/${book}/${chapter}/${verse}`
-                )
-                  .then((res) => res.json())
-                  .then((data) => {
-                    setSelectedVerse(data)
-                    setCurrentVerse(verseId)
-                  })
-                  .catch((error) => {
-                    console.error('Error fetching verse details:', error)
-                  })
-              }}
-              onRemoveBookmark={removeBookmark}
-            />
+            <div className="space-y-4">
+              <div>
+                <h3 className="text-lg font-medium text-gray-900">
+                  {activeVerse.book} {activeVerse.chapter}:{activeVerse.verse}
+                </h3>
+                <p className="mt-1 text-sm text-gray-500">{activeVerse.text}</p>
+              </div>
+              <button
+                onClick={() => setActiveVerse(null)}
+                className="text-sm text-gray-500 hover:text-gray-700"
+              >
+                Close
+              </button>
+            </div>
           </Panel>
         )}
       </ReactFlow>
@@ -571,10 +643,10 @@ function BibleGraphContent() {
   )
 }
 
-export function BibleGraph() {
+export function BibleGraph({ selectedVerse }: BibleGraphProps) {
   return (
     <ReactFlowProvider>
-      <BibleGraphContent />
+      <BibleGraphContent selectedVerse={selectedVerse} />
     </ReactFlowProvider>
   )
 } 
