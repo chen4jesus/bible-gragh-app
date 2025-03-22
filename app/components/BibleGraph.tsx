@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useState, useMemo } from 'react'
+import { useCallback, useEffect, useState, useMemo, useRef } from 'react'
 import {
   ReactFlow,
   Node,
@@ -90,6 +90,12 @@ interface BibleGraphProps {
   } | null
 }
 
+function createUniqueEdgeId(source: string, target: string): string {
+  // Sort the IDs to ensure consistent edge IDs regardless of direction
+  const [first, second] = [source, target].sort()
+  return `edge-${first}-${second}`
+}
+
 function BibleGraphContent({ selectedVerse }: BibleGraphProps) {
   // Internal state for React Flow
   const [flowNodes, setFlowNodes] = useState<Node<BibleNodeData>[]>([])
@@ -109,6 +115,10 @@ function BibleGraphContent({ selectedVerse }: BibleGraphProps) {
 
   // Add new state for expanded nodes
   const [expandedNodes, setExpandedNodes] = useState<Set<string>>(new Set())
+
+  // Add loading state tracking
+  const [loadingVerses, setLoadingVerses] = useState(new Set<string>())
+  const loadedPagesRef = useRef(new Set<string>())
 
   // Load initial Bible graph data
   useEffect(() => {
@@ -196,13 +206,16 @@ function BibleGraphContent({ selectedVerse }: BibleGraphProps) {
             newNodes.push(node)
           }
 
-          // Create edge with consistent styling
-          newEdges.push({
-            id: `${sourceId}-${targetId}`,
-            source: sourceId,
-            target: targetId,
-            ...defaultEdgeOptions,
-          })
+          // Create edge with consistent styling and unique ID
+          const edgeId = createUniqueEdgeId(sourceId, targetId)
+          if (!newEdges.some(e => e.id === edgeId)) {
+            newEdges.push({
+              id: edgeId,
+              source: sourceId,
+              target: targetId,
+              ...defaultEdgeOptions,
+            })
+          }
         })
 
         console.log(`Created ${newNodes.length} nodes and ${newEdges.length} edges`)
@@ -308,9 +321,9 @@ function BibleGraphContent({ selectedVerse }: BibleGraphProps) {
       const nodeId = `${book}-${chapter}-${verse}`
       
       // Toggle expanded state
-      const newExpandedNodes = new Set(expandedNodes)
+      const expandedNodesArray = Array.from(expandedNodes)
       if (expandedNodes.has(nodeId)) {
-        newExpandedNodes.delete(nodeId)
+        const newExpandedNodes = new Set(expandedNodesArray.filter(id => id !== nodeId))
         setExpandedNodes(newExpandedNodes)
         return
       }
@@ -359,19 +372,22 @@ function BibleGraphContent({ selectedVerse }: BibleGraphProps) {
           newNodes.push(newNode)
         }
 
-        // Add edge with consistent styling
-        newEdges.push({
-          id: `${nodeId}-${targetId}`,
-          source: nodeId,
-          target: targetId,
-          ...defaultEdgeOptions,
-        })
+        // Add edge with consistent styling and unique ID
+        const edgeId = createUniqueEdgeId(nodeId, targetId)
+        if (!flowEdges.some(e => e.id === edgeId) && !newEdges.some(e => e.id === edgeId)) {
+          newEdges.push({
+            id: edgeId,
+            source: nodeId,
+            target: targetId,
+            ...defaultEdgeOptions,
+          })
+        }
       })
 
       // Update state
       setFlowNodes(nodes => [...nodes, ...newNodes])
       setFlowEdges(edges => [...edges, ...newEdges])
-      setExpandedNodes(new Set([...expandedNodes, nodeId]))
+      setExpandedNodes(new Set([...expandedNodesArray, nodeId]))
 
       // Center the view on the expanded area with a smoother transition
       if (reactFlowInstance) {
@@ -518,34 +534,169 @@ function BibleGraphContent({ selectedVerse }: BibleGraphProps) {
     })
   }, [flowEdges, filteredNodes, selectedVerse])
 
-  // Focus on selected verse
-  useEffect(() => {
-    if (!selectedVerse || !reactFlowInstance || !isInitialized) return
+  // Function to check if a verse exists in current data
+  const verseExistsInGraph = useCallback((book: string, chapter: number, verse: number) => {
+    const verseId = `${book}-${chapter}-${verse}`
+    return flowNodes.some(node => node.id === verseId)
+  }, [flowNodes])
 
-    const verseId = `${selectedVerse.book}-${selectedVerse.chapter}-${selectedVerse.verse}`
-    const node = flowNodes.find(n => n.id === verseId)
-    
-    if (node) {
-      // Center view on the selected node
-      reactFlowInstance.setCenter(node.position.x, node.position.y, { duration: 800 })
-      
-      // Fetch verse text if not already active
-      if (!activeVerse || activeVerse.book !== selectedVerse.book || 
-          activeVerse.chapter !== selectedVerse.chapter || 
-          activeVerse.verse !== selectedVerse.verse) {
-        fetch(`http://localhost:8000/verses/${selectedVerse.book}/${selectedVerse.chapter}/${selectedVerse.verse}`)
-          .then(response => {
-            if (!response.ok) throw new Error('Failed to fetch verse details')
-            return response.json()
-          })
-          .then(data => setActiveVerse(data))
-          .catch(err => {
-            console.error('Error fetching verse details:', err)
-            setError('Failed to load verse data')
-          })
-      }
+  // Function to load additional graph data
+  const loadAdditionalData = useCallback(async (book: string, chapter: number, verse: number) => {
+    const verseId = `${book}-${chapter}-${verse}`
+    const pageKey = `${book}-${chapter}`
+
+    // Prevent duplicate loading
+    if (loadingVerses.has(verseId) || loadedPagesRef.current.has(pageKey)) {
+      console.log('Skipping load - already loading or loaded:', pageKey)
+      return
     }
-  }, [selectedVerse, reactFlowInstance, isInitialized])
+
+    try {
+      setLoadingVerses(prev => new Set(prev).add(verseId))
+      console.log('Fetching additional graph data for:', pageKey)
+      
+      const response = await fetch(`http://localhost:8000/graph-data?book=${book}&chapter=${chapter}&verse=${verse}&limit=100`)
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`)
+      }
+      
+      const data: GraphData[] = await response.json()
+      console.log(`Received ${data.length} additional records for ${pageKey}`)
+      
+      if (data.length === 0) {
+        console.log('No additional relationships found')
+        loadedPagesRef.current.add(pageKey) // Mark this page as loaded even if empty
+        return
+      }
+
+      // Create new nodes and edges from the data
+      const newNodes: BibleNode[] = []
+      const newEdges: Edge[] = []
+      const existingNodeIds = new Set(flowNodes.map(n => n.id))
+
+      data.forEach((item) => {
+        // Process source nodes
+        const sourceNodeId = `${item.source_book}-${item.source_chapter}-${item.source_verse}`
+        if (!existingNodeIds.has(sourceNodeId)) {
+          const baseX = (item.source_chapter * 250) % 2000
+          const baseY = Math.floor(item.source_chapter / 8) * 200
+          const node: BibleNode = {
+            id: sourceNodeId,
+            type: 'default',
+            position: { 
+              x: baseX + (item.source_verse * 50),
+              y: baseY + (item.source_verse * 30)
+            },
+            data: {
+              label: `${item.source_book} ${item.source_chapter}:${item.source_verse}`,
+              book: item.source_book,
+              chapter: item.source_chapter,
+              verse: item.source_verse,
+            },
+            sourcePosition: Position.Right,
+            targetPosition: Position.Left,
+            style: {
+              ...nodeStyle,
+              background: getNodeColor(item.source_book),
+            },
+          }
+          newNodes.push(node)
+          existingNodeIds.add(sourceNodeId)
+        }
+
+        // Process target nodes
+        const targetNodeId = `${item.target_book}-${item.target_chapter}-${item.target_verse}`
+        if (!existingNodeIds.has(targetNodeId)) {
+          const baseX = (item.target_chapter * 250) % 2000
+          const baseY = Math.floor(item.target_chapter / 8) * 200 + 150
+          const node: BibleNode = {
+            id: targetNodeId,
+            type: 'default',
+            position: { 
+              x: baseX + (item.target_verse * 50),
+              y: baseY + (item.target_verse * 30)
+            },
+            data: {
+              label: `${item.target_book} ${item.target_chapter}:${item.target_verse}`,
+              book: item.target_book,
+              chapter: item.target_chapter,
+              verse: item.target_verse,
+            },
+            sourcePosition: Position.Right,
+            targetPosition: Position.Left,
+            style: {
+              ...nodeStyle,
+              background: getNodeColor(item.target_book),
+            },
+          }
+          newNodes.push(node)
+          existingNodeIds.add(targetNodeId)
+        }
+
+        // Create edge if it doesn't exist
+        const edgeId = createUniqueEdgeId(sourceNodeId, targetNodeId)
+        if (!flowEdges.some(e => e.id === edgeId) && !newEdges.some(e => e.id === edgeId)) {
+          newEdges.push({
+            id: edgeId,
+            source: sourceNodeId,
+            target: targetNodeId,
+            ...defaultEdgeOptions,
+          })
+        }
+      })
+
+      // Batch update state
+      if (newNodes.length > 0 || newEdges.length > 0) {
+        setFlowNodes(nodes => [...nodes, ...newNodes])
+        setFlowEdges(edges => [...edges, ...newEdges])
+        
+        // Update books list with new unique books
+        const newBooks = Array.from(
+          new Set([
+            ...books,
+            ...data.map(item => item.source_book),
+            ...data.map(item => item.target_book),
+          ])
+        ).sort()
+        setBooks(newBooks)
+
+        console.log(`Added ${newNodes.length} nodes and ${newEdges.length} edges for ${pageKey}`)
+      }
+
+      // Mark this page as loaded
+      loadedPagesRef.current.add(pageKey)
+
+    } catch (error) {
+      console.error('Error fetching additional graph data:', error)
+      setError(error instanceof Error ? error.message : 'An error occurred')
+    } finally {
+      setLoadingVerses(prev => {
+        const next = new Set(prev)
+        next.delete(verseId)
+        return next
+      })
+    }
+  }, [flowNodes, flowEdges, books, loadingVerses, getNodeColor])
+
+  // Effect to handle selected verse changes
+  useEffect(() => {
+    if (!selectedVerse || !isInitialized) return
+
+    const { book, chapter, verse } = selectedVerse
+    const verseId = `${book}-${chapter}-${verse}`
+    
+    // Check if the verse exists in current data
+    if (!verseExistsInGraph(book, chapter, verse) && !loadingVerses.has(verseId)) {
+      // Load additional data if verse not found and not currently loading
+      loadAdditionalData(book, chapter, verse)
+    }
+
+    // Center view on the verse if it exists
+    const node = flowNodes.find(n => n.id === verseId)
+    if (node && reactFlowInstance) {
+      reactFlowInstance.setCenter(node.position.x, node.position.y, { duration: 800 })
+    }
+  }, [selectedVerse, isInitialized, verseExistsInGraph, loadAdditionalData, loadingVerses, flowNodes])
 
   if (loading) {
     return <div className="flex items-center justify-center h-screen">Loading graph data...</div>

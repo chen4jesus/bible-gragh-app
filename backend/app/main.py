@@ -1,7 +1,7 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from neo4j import GraphDatabase
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 import os
 from dotenv import load_dotenv
 
@@ -66,7 +66,12 @@ async def get_cross_references(book: str, chapter: int, verse: int):
         return [dict(record) for record in result]
 
 @app.get("/graph-data")
-async def get_graph_data():
+async def get_graph_data(
+    book: Optional[str] = Query(None, description="Filter by book name"),
+    chapter: Optional[int] = Query(None, description="Filter by chapter number"),
+    verse: Optional[int] = Query(None, description="Filter by verse number"),
+    limit: Optional[int] = Query(100, description="Limit the number of results")
+):
     with driver.session() as session:
         # First, check if we have any verses
         verse_count = session.run(
@@ -76,18 +81,8 @@ async def get_graph_data():
             """
         ).single()["count"]
         
-        # Then check if we have any references
-        ref_count = session.run(
-            """
-            MATCH ()-[r:REFERENCES]->()
-            RETURN count(r) as count
-            """
-        ).single()["count"]
-        
-        print(f"Found {verse_count} verses and {ref_count} references")
-        
         if verse_count == 0:
-            # Create some sample verses
+            # Create some sample verses if no data exists
             session.run("""
                 CREATE (v1:Verse {book: '创世记', chapter: 1, verse: 1, text: '起初，神创造天地。'})
                 CREATE (v2:Verse {book: '创世记', chapter: 1, verse: 2, text: '地是空虚混沌，渊面黑暗；神的灵运行在水面上。'})
@@ -99,37 +94,50 @@ async def get_graph_data():
                 CREATE (v3)-[:REFERENCES]->(v4)
                 CREATE (v4)-[:REFERENCES]->(v5)
             """)
-            print("Created sample verses and references")
-            
-            result = session.run(
-                """
-                MATCH (v1:Verse)-[r:REFERENCES]->(v2:Verse)
-                RETURN 
-                    v1.book as source_book, 
-                    v1.chapter as source_chapter, 
-                    v1.verse as source_verse,
-                    v2.book as target_book, 
-                    v2.chapter as target_chapter, 
-                    v2.verse as target_verse
-                """
-            )
-        else:
-            result = session.run(
-                """
-                MATCH (v1:Verse)-[r:REFERENCES]->(v2:Verse)
-                RETURN 
-                    v1.book as source_book, 
-                    v1.chapter as source_chapter, 
-                    v1.verse as source_verse,
-                    v2.book as target_book, 
-                    v2.chapter as target_chapter, 
-                    v2.verse as target_verse
-                LIMIT 100
-                """
-            )
+
+        # Build the query based on provided parameters
+        query = """
+        MATCH (v1:Verse)-[r:REFERENCES]->(v2:Verse)
+        """
         
+        # Add WHERE clause based on parameters
+        where_clauses = []
+        params = {}
+        
+        if book:
+            where_clauses.append("(v1.book = $book OR v2.book = $book)")
+            params["book"] = book
+            
+        if chapter:
+            where_clauses.append("(v1.chapter = $chapter OR v2.chapter = $chapter)")
+            params["chapter"] = chapter
+            
+        if verse:
+            where_clauses.append("(v1.verse = $verse OR v2.verse = $verse)")
+            params["verse"] = verse
+
+        if where_clauses:
+            query += "\nWHERE " + " AND ".join(where_clauses)
+
+        # Add return and limit
+        query += """
+        RETURN 
+            v1.book as source_book, 
+            v1.chapter as source_chapter, 
+            v1.verse as source_verse,
+            v2.book as target_book, 
+            v2.chapter as target_chapter, 
+            v2.verse as target_verse
+        LIMIT $limit
+        """
+        params["limit"] = limit
+
+        print("Executing query:", query)
+        print("With parameters:", params)
+        
+        result = session.run(query, params)
         data = [dict(record) for record in result]
-        print(f"Returning {len(data)} graph data records")
+        print(f"Found {len(data)} relationships")
         return data
 
 if __name__ == "__main__":

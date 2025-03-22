@@ -21,13 +21,30 @@ export function BibleNavigator({
   const [selectedChapter, setSelectedChapter] = useState(initialChapter)
   const [selectedVerse, setSelectedVerse] = useState(initialVerse)
   const [highlightedVerse, setHighlightedVerse] = useState<number | null>(null)
+  const [isLoading, setIsLoading] = useState(false)
 
   // Find current book and chapter
   const currentBook = bibleData.books.find(b => b.name === selectedBook)
   const currentChapter = currentBook?.chapters.find(c => c.number == selectedChapter)
 
+  // Function to fetch graph data for a verse
+  const fetchGraphData = useCallback(async (book: string, chapter: number, verse: number) => {
+    try {
+      setIsLoading(true)
+      const response = await fetch(`http://localhost:8000/verses/${book}/${chapter}/${verse}`)
+      if (!response.ok) {
+        throw new Error('Failed to fetch verse connections')
+      }
+      // The graph will update automatically through the selectedVerse prop
+    } catch (error) {
+      console.error('Error fetching verse connections:', error)
+    } finally {
+      setIsLoading(false)
+    }
+  }, [])
+
   // Function to scroll to and highlight a verse
-  const focusVerse = useCallback((verseNumber: number) => {
+  const focusVerse = useCallback(async (verseNumber: number) => {
     setSelectedVerse(verseNumber)
     setHighlightedVerse(verseNumber)
 
@@ -76,13 +93,14 @@ export function BibleNavigator({
           const firstVerse = firstBook.chapters[0].verses[0].verse
           setSelectedVerse(firstVerse)
           onVerseSelect(firstBook.name, firstBook.chapters[0].number, firstVerse)
+          fetchGraphData(firstBook.name, firstBook.chapters[0].number, firstVerse)
         }
       }
     }
   }, [])
 
   // Handle selection changes
-  const handleBookChange = (event: React.ChangeEvent<HTMLSelectElement>) => {
+  const handleBookChange = async (event: React.ChangeEvent<HTMLSelectElement>) => {
     const newBook = event.target.value
     const book = bibleData.books.find(b => b.name === newBook)
     if (book) {
@@ -94,14 +112,14 @@ export function BibleNavigator({
       const firstVerse = firstChapter.verses[0].verse
       setSelectedVerse(firstVerse)
       onVerseSelect(newBook, firstChapter.number, firstVerse)
+      await fetchGraphData(newBook, firstChapter.number, firstVerse)
       focusVerse(firstVerse)
     }
   }
 
-  const handleChapterChange = (event: React.ChangeEvent<HTMLSelectElement>) => {
+  const handleChapterChange = async (event: React.ChangeEvent<HTMLSelectElement>) => {
     const newChapterNum = parseInt(event.target.value, 10)
     if (currentBook) {
-      //setSelectedBook(currentBook.name)
       const newChapter = currentBook.chapters.find(c => c.number == newChapterNum)
       if (newChapter) {
         // Update chapter selection
@@ -109,8 +127,9 @@ export function BibleNavigator({
         // Reset to first verse of new chapter
         const firstVerse = newChapter.verses[0].verse
         setSelectedVerse(firstVerse)
-        // Notify parent component
+        // Notify parent component and update graph
         onVerseSelect(selectedBook, newChapterNum, firstVerse)
+        await fetchGraphData(selectedBook, newChapterNum, firstVerse)
         // Focus the first verse with a small delay to ensure state updates
         setTimeout(() => {
           focusVerse(firstVerse)
@@ -119,17 +138,19 @@ export function BibleNavigator({
     }
   }
 
-  const handleVerseChange = (event: React.ChangeEvent<HTMLSelectElement>) => {
+  const handleVerseChange = async (event: React.ChangeEvent<HTMLSelectElement>) => {
     const newVerse = parseInt(event.target.value, 10)
     setSelectedVerse(newVerse)
     onVerseSelect(selectedBook, selectedChapter, newVerse)
+    await fetchGraphData(selectedBook, selectedChapter, newVerse)
     focusVerse(newVerse)
   }
 
   // Handle verse click
-  const handleVerseClick = (verse: number) => {
+  const handleVerseClick = async (verse: number) => {
     setSelectedVerse(verse)
     onVerseSelect(selectedBook, selectedChapter, verse)
+    await fetchGraphData(selectedBook, selectedChapter, verse)
     focusVerse(verse)
   }
 
@@ -141,6 +162,7 @@ export function BibleNavigator({
         const firstVerse = currentChapter.verses[0].verse
         setSelectedVerse(firstVerse)
         onVerseSelect(selectedBook, selectedChapter, firstVerse)
+        fetchGraphData(selectedBook, selectedChapter, firstVerse)
         focusVerse(firstVerse)
       }
     }
@@ -161,6 +183,7 @@ export function BibleNavigator({
               value={selectedBook}
               onChange={handleBookChange}
               className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors"
+              disabled={isLoading}
             >
               {bibleData.books.map(book => (
                 <option key={book.name} value={book.name}>
@@ -180,6 +203,7 @@ export function BibleNavigator({
               value={selectedChapter}
               onChange={handleChapterChange}
               className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors"
+              disabled={isLoading}
             >
               {currentBook?.chapters.map(chapter => (
                 <option key={chapter.number} value={chapter.number}>
@@ -199,6 +223,7 @@ export function BibleNavigator({
               value={selectedVerse}
               onChange={handleVerseChange}
               className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors"
+              disabled={isLoading}
             >
               {currentChapter?.verses.map(verse => (
                 <option key={verse.verse} value={verse.verse}>
@@ -232,6 +257,8 @@ export function BibleNavigator({
                   id={`verse-${verse.verse}`}
                   onClick={() => handleVerseClick(verse.verse)}
                   className={`group p-4 rounded-lg transition-all duration-500 cursor-pointer ${
+                    isLoading ? 'opacity-50 pointer-events-none' : ''
+                  } ${
                     verse.verse === selectedVerse 
                       ? 'bg-blue-50 border border-blue-100 shadow-sm' 
                       : verse.verse === highlightedVerse
