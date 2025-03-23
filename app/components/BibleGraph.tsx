@@ -1336,13 +1336,7 @@ function BibleGraphContent({ selectedVerse }: BibleGraphProps) {
             </div>
           </Panel>
         )}
-        {/* Add information panel about disabled double-click */}
-        <Panel position="bottom-left" className="bg-white p-3 rounded-lg shadow-lg">
-          <div className="text-sm text-gray-700">
-            <p><strong>Note:</strong> Double-click functionality has been disabled to prevent duplicate loading issues.</p>
-            <p className="text-xs text-gray-500 mt-1">Click on a node and use the "Expand Node Connections" button instead.</p>
-          </div>
-        </Panel>
+        
       </ReactFlow>
     </div>
   )
