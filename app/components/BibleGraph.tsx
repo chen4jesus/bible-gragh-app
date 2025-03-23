@@ -60,10 +60,14 @@ const nodeStyle = {
   width: 200,
   boxShadow: theme.shadows.md,
   border: '1px solid rgba(0, 0, 0, 0.1)',
-  transition: `all ${theme.transitions.normal}`,
+  transition: `all 0.2s ease-in-out`,
   '&:hover': {
-    boxShadow: theme.shadows.lg,
-    transform: 'translateY(-2px)',
+    boxShadow: `0 12px 20px -10px ${theme.colors.primary[300]}`,
+    transform: 'translateY(-3px) scale(1.02)',
+    borderColor: theme.colors.primary[500],
+    borderWidth: '2px',
+    zIndex: 10,
+    filter: 'brightness(1.1)',
   },
 }
 
@@ -104,6 +108,15 @@ const expandedEdgeStyle = {
     stroke: theme.colors.primary[600],
     opacity: 1,
   },
+}
+
+// Define edge styles for Bible navigator selected verses
+const selectedVerseEdgeStyle = {
+  ...edgeStyle,
+  stroke: '#E53E3E', // Use a hardcoded red color since theme doesn't have red
+  strokeWidth: 3,
+  opacity: 0.9,
+  filter: 'drop-shadow(0 1px 3px rgba(220, 38, 38, 0.4))', // Add red glow shadow
 }
 
 interface BibleGraphProps {
@@ -483,7 +496,10 @@ function BibleGraphContent({ selectedVerse }: BibleGraphProps) {
             style: expandedEdgeStyle,
             data: { 
               isExpansionEdge: true,
-              label: 'Reference' // Add a label to show this is a reference connection
+              label: 'Reference', // Add a label to show this is a reference connection
+              sourceVerse: `${book} ${chapter}:${verse}`,
+              targetVerse: `${rel.target_book} ${rel.target_chapter}:${rel.target_verse}`,
+              relationship: 'Cross-reference' // Set a default relationship type
             },
             markerEnd: {
               type: MarkerType.ArrowClosed, // Add a more prominent arrow
@@ -491,7 +507,7 @@ function BibleGraphContent({ selectedVerse }: BibleGraphProps) {
               height: 15,
               color: theme.colors.primary[500]
             },
-            // Add a label to the edge
+            // Show edge text on hover
             label: '→',
             labelStyle: { 
               fill: theme.colors.primary[700], 
@@ -545,6 +561,50 @@ function BibleGraphContent({ selectedVerse }: BibleGraphProps) {
       setError('Failed to load verse relationships')
     }
   }, [expandedNodes, flowNodes, reactFlowInstance, calculateOptimalLayout, expandedEdgeStyle])
+
+  // Add event handler for edge mouse enter/leave to show edge data
+  const onEdgeMouseEnter = useCallback((event: React.MouseEvent, edge: Edge) => {
+    if (edge.data) {
+      // Create a tooltip element with edge data
+      const tooltip = document.createElement('div');
+      tooltip.id = `edge-tooltip-${edge.id}`;
+      tooltip.className = 'edge-tooltip';
+      tooltip.style.position = 'absolute';
+      tooltip.style.left = `${event.clientX + 10}px`;
+      tooltip.style.top = `${event.clientY + 10}px`;
+      tooltip.style.backgroundColor = 'white';
+      tooltip.style.padding = '8px';
+      tooltip.style.borderRadius = '4px';
+      tooltip.style.boxShadow = '0 2px 10px rgba(0,0,0,0.2)';
+      tooltip.style.zIndex = '1000';
+      tooltip.style.fontSize = '12px';
+      tooltip.style.maxWidth = '250px';
+      
+      // Add edge data to tooltip
+      let tooltipContent = '';
+      if (edge.data.sourceVerse && edge.data.targetVerse) {
+        tooltipContent += `<div><strong>From:</strong> ${edge.data.sourceVerse}</div>`;
+        tooltipContent += `<div><strong>To:</strong> ${edge.data.targetVerse}</div>`;
+      }
+      if (edge.data.relationship) {
+        tooltipContent += `<div><strong>Type:</strong> ${edge.data.relationship}</div>`;
+      }
+      if (edge.data.label) {
+        tooltipContent += `<div><strong>Connection:</strong> ${edge.data.label}</div>`;
+      }
+      
+      tooltip.innerHTML = tooltipContent || 'Connection';
+      document.body.appendChild(tooltip);
+    }
+  }, []);
+
+  const onEdgeMouseLeave = useCallback((event: React.MouseEvent, edge: Edge) => {
+    // Remove tooltip when mouse leaves edge
+    const tooltip = document.getElementById(`edge-tooltip-${edge.id}`);
+    if (tooltip) {
+      document.body.removeChild(tooltip);
+    }
+  }, []);
 
   const getNodeColor = (bookName: string) => {
     return (bookName in nodeColors)
@@ -654,6 +714,18 @@ function BibleGraphContent({ selectedVerse }: BibleGraphProps) {
           };
         }
 
+        // Apply red color for edges connected to the selected verse
+        if (isConnected) {
+          return {
+            ...edge,
+            hidden: false,
+            animated: true,
+            style: selectedVerseEdgeStyle,
+            // Add hover interactivity for edge text
+            interactionWidth: 10, // Wider area for mouse interaction
+          }
+        }
+
         return {
           ...edge,
           hidden: false,
@@ -662,7 +734,7 @@ function BibleGraphContent({ selectedVerse }: BibleGraphProps) {
             ...edgeStyle,
             opacity: isConnected ? 1 : 0.1,
             strokeWidth: isConnected ? 3 : 1,
-            stroke: isConnected ? theme.colors.primary[500] : theme.colors.gray[400],
+            stroke: isConnected ? theme.colors.gray[400] : theme.colors.gray[400],
           },
         }
       }
@@ -682,9 +754,11 @@ function BibleGraphContent({ selectedVerse }: BibleGraphProps) {
         ...edge,
         hidden: false,
         ...defaultEdgeOptions,
+        // Enable edge text display on hover for all edges
+        interactionWidth: 10,
       }
     })
-  }, [flowEdges, filteredNodes, selectedVerse, expandedNodes, expandedEdgeStyle])
+  }, [flowEdges, filteredNodes, selectedVerse, expandedNodes, expandedEdgeStyle, selectedVerseEdgeStyle])
 
   // Function to check if a verse exists in current data
   const verseExistsInGraph = useCallback((book: string, chapter: number, verse: number) => {
@@ -888,6 +962,8 @@ function BibleGraphContent({ selectedVerse }: BibleGraphProps) {
         onEdgesChange={onEdgesChange}
         onNodeClick={onNodeClick}
         onNodeDoubleClick={onNodeDoubleClick}
+        onEdgeMouseEnter={onEdgeMouseEnter}
+        onEdgeMouseLeave={onEdgeMouseLeave}
         defaultEdgeOptions={defaultEdgeOptions}
         fitView
         fitViewOptions={{ padding: 0.2 }}
