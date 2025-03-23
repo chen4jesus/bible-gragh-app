@@ -33,18 +33,18 @@ export function BibleNavigator({
   const currentBook = bibleData.books.find(b => b.name === selectedBook)
   const currentChapter = currentBook?.chapters.find(c => c.number == selectedChapter)
 
-  // Function to fetch graph data for a verse
-  const fetchGraphData = useCallback(async (book: string, chapter: number, verse: number) => {
+  // Function to fetch verse data
+  const fetchVerseData = useCallback(async (book: string, chapter: number, verse: number) => {
     try {
       setIsLoading(true)
       await bibleApi.getVerse(book, chapter, verse)
-      // The graph will update automatically through the selectedVerse prop
+      onVerseSelect(book, chapter, verse)
     } catch (error) {
-      console.error('Error fetching verse connections:', error)
+      console.error('Error fetching verse data:', error)
     } finally {
       setIsLoading(false)
     }
-  }, [])
+  }, [onVerseSelect])
 
   // Function to scroll to and highlight a verse
   const focusVerse = useCallback(async (verseNumber: number) => {
@@ -89,7 +89,7 @@ export function BibleNavigator({
           const firstVerse = firstBook.chapters[0].verses[0].verse
           setSelectedVerse(firstVerse)
           onVerseSelect(firstBook.name, firstBook.chapters[0].number, firstVerse)
-          fetchGraphData(firstBook.name, firstBook.chapters[0].number, firstVerse)
+          fetchVerseData(firstBook.name, firstBook.chapters[0].number, firstVerse)
         }
       }
     }
@@ -108,7 +108,7 @@ export function BibleNavigator({
       const firstVerse = firstChapter.verses[0].verse
       setSelectedVerse(firstVerse)
       onVerseSelect(newBook, firstChapter.number, firstVerse)
-      await fetchGraphData(newBook, firstChapter.number, firstVerse)
+      await fetchVerseData(newBook, firstChapter.number, firstVerse)
       focusVerse(firstVerse)
     }
   }
@@ -125,7 +125,7 @@ export function BibleNavigator({
         setSelectedVerse(firstVerse)
         // Notify parent component and update graph
         onVerseSelect(selectedBook, newChapterNum, firstVerse)
-        await fetchGraphData(selectedBook, newChapterNum, firstVerse)
+        await fetchVerseData(selectedBook, newChapterNum, firstVerse)
         // Focus the first verse with a small delay to ensure state updates
         setTimeout(() => {
           focusVerse(firstVerse)
@@ -138,7 +138,7 @@ export function BibleNavigator({
     const newVerse = parseInt(event.target.value, 10)
     setSelectedVerse(newVerse)
     onVerseSelect(selectedBook, selectedChapter, newVerse)
-    await fetchGraphData(selectedBook, selectedChapter, newVerse)
+    await fetchVerseData(selectedBook, selectedChapter, newVerse)
     focusVerse(newVerse)
   }
 
@@ -146,7 +146,7 @@ export function BibleNavigator({
   const handleVerseClick = async (verse: number) => {
     setSelectedVerse(verse)
     onVerseSelect(selectedBook, selectedChapter, verse)
-    await fetchGraphData(selectedBook, selectedChapter, verse)
+    await fetchVerseData(selectedBook, selectedChapter, verse)
     focusVerse(verse)
   }
 
@@ -158,7 +158,7 @@ export function BibleNavigator({
         const firstVerse = currentChapter.verses[0].verse
         setSelectedVerse(firstVerse)
         onVerseSelect(selectedBook, selectedChapter, firstVerse)
-        fetchGraphData(selectedBook, selectedChapter, firstVerse)
+        fetchVerseData(selectedBook, selectedChapter, firstVerse)
         focusVerse(firstVerse)
       }
     }

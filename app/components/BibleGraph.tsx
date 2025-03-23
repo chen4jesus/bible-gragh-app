@@ -27,13 +27,6 @@ import { bibleApi, GraphData as ApiGraphData, VerseData, CrossReferenceData } fr
 
 type GraphData = ApiGraphData;
 
-interface VerseData {
-  book: string
-  chapter: number
-  verse: number
-  text: string
-}
-
 interface BibleNodeData extends Record<string, unknown> {
   label: string
   book: string
@@ -147,11 +140,10 @@ function BibleGraphContent({ selectedVerse }: BibleGraphProps) {
   // Internal state for React Flow
   const [flowNodes, setFlowNodes] = useState<Node<BibleNodeData>[]>([])
   const [flowEdges, setFlowEdges] = useState<Edge[]>([])
-  const [isInitialized, setIsInitialized] = useState(false)
   
   // Application state
   const [error, setError] = useState<string | null>(null)
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(false)
   const [activeVerse, setActiveVerse] = useState<VerseData | null>(null)
   const [searchTerm, setSearchTerm] = useState('')
   const [selectedBook, setSelectedBook] = useState<string | null>(null)
@@ -181,6 +173,10 @@ function BibleGraphContent({ selectedVerse }: BibleGraphProps) {
   const [edgeType, setEdgeType] = useState('smoothstep')
   const [edgeMarkerEnd, setEdgeMarkerEnd] = useState(MarkerType.Arrow)
   const [shiftKeyActive, setShiftKeyActive] = useState(false)
+  
+  // Add layout options
+  type LayoutType = 'default' | 'circular' | 'force' | 'tree' | 'grid' | 'radial'
+  const [selectedLayout, setSelectedLayout] = useState<LayoutType>('default')
 
   // Add state to track if we had NaN errors
   const [hasFixedNaN, setHasFixedNaN] = useState(false)
@@ -211,144 +207,201 @@ function BibleGraphContent({ selectedVerse }: BibleGraphProps) {
     };
   }, []);
 
-  // Simple utility to fix NaN positions in nodes
+  // Add function to fix NaN positions
   const validateAndFixNodePositions = useCallback(() => {
-    const hasInvalidPositions = flowNodes.some(
-      node => isNaN(node.position.x) || isNaN(node.position.y)
-    );
+    let shouldUpdate = false;
+    const fixedNodes = flowNodes.map(node => {
+      if (
+        isNaN(node.position.x) || 
+        isNaN(node.position.y) ||
+        !isFinite(node.position.x) ||
+        !isFinite(node.position.y)
+      ) {
+        shouldUpdate = true;
+        return {
+          ...node,
+          position: {
+            x: Math.random() * 500, // Random position as fallback
+            y: Math.random() * 500,
+          },
+        };
+      }
+      return node;
+    });
     
-    if (hasInvalidPositions) {
-      console.warn('Found NaN positions in nodes, fixing...');
-      const fixedNodes = flowNodes.map(node => ({
-        ...node,
-        position: {
-          x: isNaN(node.position.x) ? 0 : node.position.x,
-          y: isNaN(node.position.y) ? 0 : node.position.y
-        }
-      }));
+    if (shouldUpdate) {
+      console.log('Fixed NaN positions in nodes');
       setFlowNodes(fixedNodes);
       setHasFixedNaN(true);
-      return true;
     }
-    
-    return false;
-  }, [flowNodes, setFlowNodes]);
-  
-  // Run position validation when nodes change
+  }, [flowNodes]);
+
+  // Check for NaN positions periodically
   useEffect(() => {
     if (flowNodes.length > 0) {
       validateAndFixNodePositions();
     }
   }, [flowNodes, validateAndFixNodePositions]);
 
-  // Load initial Bible graph data
+  // Watch for selected verse changes from the Bible Navigator
   useEffect(() => {
-    if (isInitialized) return
-
-    async function fetchGraphData() {
-      try {
-        setLoading(true)
-        setError(null)
-        console.log('Fetching graph data...')
-        
-        const data = await bibleApi.getGraphData()
-        console.log(`Received ${data.length} records from API`)
-        
-        if (data.length === 0) {
-          setError('No graph data available')
-          return
-        }
-        
-        // Extract unique books
-        const uniqueBooks = Array.from(
-          new Set([
-            ...data.map((item) => item.source_book),
-            ...data.map((item) => item.target_book),
-          ])
-        ).sort()
-        setBooks(uniqueBooks)
-        
-        // Create nodes and edges from the data
-        const newNodes: BibleNode[] = []
-        const newEdges: Edge[] = []
-        const nodeMap = new Map<string, BibleNode>()
-
-        data.forEach((item, index) => {
-          // Create source node
-          const sourceId = `${item.source_book}-${item.source_chapter}-${item.source_verse}`
-          if (!nodeMap.has(sourceId)) {
-            const node: BibleNode = {
-              id: sourceId,
-              type: 'default',
-              position: { x: index * 250, y: 0 },
-              data: {
-                label: `${item.source_book} ${item.source_chapter}:${item.source_verse}`,
-                book: item.source_book,
-                chapter: item.source_chapter,
-                verse: item.source_verse,
-              },
-              sourcePosition: Position.Right,
-              targetPosition: Position.Left,
-              style: {
-                ...nodeStyle,
-                background: getNodeColor(item.source_book),
-              },
-            }
-            nodeMap.set(sourceId, node)
-            newNodes.push(node)
-          }
-
-          // Create target node
-          const targetId = `${item.target_book}-${item.target_chapter}-${item.target_verse}`
-          if (!nodeMap.has(targetId)) {
-            const node: BibleNode = {
-              id: targetId,
-              type: 'default',
-              position: { x: index * 250, y: 150 },
-              data: {
-                label: `${item.target_book} ${item.target_chapter}:${item.target_verse}`,
-                book: item.target_book,
-                chapter: item.target_chapter,
-                verse: item.target_verse,
-              },
-              sourcePosition: Position.Right,
-              targetPosition: Position.Left,
-              style: {
-                ...nodeStyle,
-                background: getNodeColor(item.target_book),
-              },
-            }
-            nodeMap.set(targetId, node)
-            newNodes.push(node)
-          }
-
-          // Create edge with consistent styling and unique ID
-          const edgeId = createUniqueEdgeId(sourceId, targetId)
-          if (!newEdges.some(e => e.id === edgeId)) {
-            newEdges.push({
-              id: edgeId,
-              source: sourceId,
-              target: targetId,
-              ...defaultEdgeOptions,
-            })
-          }
-        })
-
-        console.log(`Created ${newNodes.length} nodes and ${newEdges.length} edges`)
-        
-        setFlowNodes(newNodes)
-        setFlowEdges(newEdges)
-        setIsInitialized(true)
-      } catch (error) {
-        console.error('Error fetching graph data:', error)
-        setError(error instanceof Error ? error.message : 'An error occurred')
-      } finally {
-        setLoading(false)
+    if (selectedVerse) {
+      const verseId = `${selectedVerse.book}-${selectedVerse.chapter}-${selectedVerse.verse}`;
+      
+      // Check if we already have this verse loaded
+      const existingNode = flowNodes.find(node => node.id === verseId);
+      
+      if (!existingNode) {
+        // Fetch data for this verse since it's not already loaded
+        loadVerseData(selectedVerse.book, selectedVerse.chapter, selectedVerse.verse);
+      } else {
+        // The verse is already in the graph, just focus on it
+        focusOnNode(verseId);
       }
     }
+  }, [selectedVerse]);
 
-    fetchGraphData()
-  }, [isInitialized])
+  // Function to load verse data when a selection is made
+  const loadVerseData = async (book: string, chapter: number, verse: number) => {
+    try {
+      setLoading(true);
+      setError(null);
+      
+      const verseId = `${book}-${chapter}-${verse}`;
+      
+      // Fetch the filtered graph data for this verse
+      const data = await bibleApi.getFilteredGraphData(book, chapter, verse, 20);
+      
+      if (data.length === 0) {
+        console.log('No connections found for this verse');
+        
+        // Create a single node for this verse even if it has no connections
+        const newNode: BibleNode = {
+          id: verseId,
+          type: 'default',
+          position: { x: 0, y: 0 }, // Center of the viewport
+          data: {
+            label: `${book} ${chapter}:${verse}`,
+            book,
+            chapter,
+            verse,
+          },
+          sourcePosition: Position.Right,
+          targetPosition: Position.Left,
+          style: {
+            ...nodeStyle,
+            background: getNodeColor(book),
+          },
+        };
+        
+        setFlowNodes([newNode]);
+        setFlowEdges([]);
+        focusOnNode(verseId);
+        return;
+      }
+      
+      // Process the data to create nodes and edges
+      const newNodes: BibleNode[] = [];
+      const newEdges: Edge[] = [];
+      const nodeMap = new Map<string, BibleNode>();
+      
+      // Extract unique books for future use
+      const uniqueBooks = Array.from(
+        new Set([
+          ...data.map((item) => item.source_book),
+          ...data.map((item) => item.target_book),
+        ])
+      ).sort();
+      setBooks(uniqueBooks);
+      
+      data.forEach((item, index) => {
+        // Create source node
+        const sourceId = `${item.source_book}-${item.source_chapter}-${item.source_verse}`;
+        if (!nodeMap.has(sourceId)) {
+          const node: BibleNode = {
+            id: sourceId,
+            type: 'default',
+            position: { 
+              x: 0 + Math.cos(index * 0.5) * 200, 
+              y: 0 + Math.sin(index * 0.5) * 200 
+            },
+            data: {
+              label: `${item.source_book} ${item.source_chapter}:${item.source_verse}`,
+              book: item.source_book,
+              chapter: item.source_chapter,
+              verse: item.source_verse,
+            },
+            sourcePosition: Position.Right,
+            targetPosition: Position.Left,
+            style: {
+              ...nodeStyle,
+              background: getNodeColor(item.source_book),
+            },
+          };
+          nodeMap.set(sourceId, node);
+          newNodes.push(node);
+        }
+
+        // Create target node
+        const targetId = `${item.target_book}-${item.target_chapter}-${item.target_verse}`;
+        if (!nodeMap.has(targetId)) {
+          const node: BibleNode = {
+            id: targetId,
+            type: 'default',
+            position: { 
+              x: 0 + Math.cos((index + 5) * 0.5) * 200, 
+              y: 0 + Math.sin((index + 5) * 0.5) * 200 
+            },
+            data: {
+              label: `${item.target_book} ${item.target_chapter}:${item.target_verse}`,
+              book: item.target_book,
+              chapter: item.target_chapter,
+              verse: item.target_verse,
+            },
+            sourcePosition: Position.Right,
+            targetPosition: Position.Left,
+            style: {
+              ...nodeStyle,
+              background: getNodeColor(item.target_book),
+            },
+          };
+          nodeMap.set(targetId, node);
+          newNodes.push(node);
+        }
+
+        // Create edge with consistent styling and unique ID
+        const edgeId = createUniqueEdgeId(sourceId, targetId);
+        if (!newEdges.some(e => e.id === edgeId)) {
+          newEdges.push({
+            id: edgeId,
+            source: sourceId,
+            target: targetId,
+            ...defaultEdgeOptions,
+          });
+        }
+      });
+      
+      setFlowNodes(newNodes);
+      setFlowEdges(newEdges);
+      focusOnNode(verseId);
+    } catch (error) {
+      console.error('Error loading verse data:', error);
+      setError(error instanceof Error ? error.message : 'An error occurred');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Function to focus on a specific node
+  const focusOnNode = useCallback((nodeId: string) => {
+    const node = flowNodes.find(n => n.id === nodeId);
+    if (node && reactFlowInstance) {
+      // Center the view on this node
+      reactFlowInstance.setCenter(node.position.x, node.position.y, { duration: 800 });
+      // Update the last focused node
+      setLastFocusedVerseId(nodeId);
+    }
+  }, [flowNodes, reactFlowInstance]);
 
   const onNodesChange = useCallback(
     (changes: NodeChange[]) => {
@@ -1170,7 +1223,7 @@ function BibleGraphContent({ selectedVerse }: BibleGraphProps) {
 
   // Update the useEffect to use our new more robust loading system
   useEffect(() => {
-    if (!selectedVerse || !isInitialized) return;
+    if (!selectedVerse) return;
 
     const { book, chapter, verse } = selectedVerse;
     const verseId = `${book}-${chapter}-${verse}`;
@@ -1183,13 +1236,13 @@ function BibleGraphContent({ selectedVerse }: BibleGraphProps) {
     // Reset user navigation when verse is selected externally
     setUserHasNavigated(false);
     
-    // Use our new robust loading system
-    loadVerseWithRetries(book, chapter, verse);
+    // Use our loadVerseData function to load verse data
+    loadVerseData(book, chapter, verse);
     
-  }, [selectedVerse, isInitialized, lastFocusedVerseId, loadVerseWithRetries]);
+  }, [selectedVerse, lastFocusedVerseId, loadVerseData]);
 
   if (loading) {
-    return <div className="flex items-center justify-center h-screen">Loading graph data...</div>
+    return <div className="flex items-center justify-center h-screen">Loading verse connections...</div>
   }
 
   if (error) {
@@ -1241,11 +1294,7 @@ function BibleGraphContent({ selectedVerse }: BibleGraphProps) {
           showInteractive={false}
           className="bg-white shadow-lg rounded-lg"
         />
-        <MiniMap
-          nodeColor={(node) => getNodeColor(node.data.book as string)}
-          maskColor={theme.colors.gray[50]}
-          className="bg-white shadow-lg rounded-lg"
-        />
+
         <Panel position="top-left" className="bg-white p-4 rounded-lg shadow-lg">
           <div className="space-y-4">
             <div>
