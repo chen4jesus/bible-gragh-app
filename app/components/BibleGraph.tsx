@@ -17,6 +17,8 @@ import {
   Connection,
   useReactFlow,
   ReactFlowProvider,
+  SelectionMode,
+  MarkerType,
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import { theme } from '../styles/theme'
@@ -80,6 +82,28 @@ const defaultEdgeOptions = {
   type: 'smoothstep',
   animated: true,
   style: edgeStyle,
+  pathOptions: {
+    offset: 15,
+    borderRadius: 5,
+  }
+}
+
+// Add edge styling for expanded node connections
+const expandedEdgeStyle = {
+  ...edgeStyle,
+  stroke: theme.colors.primary[500], // Brighter color
+  strokeWidth: 4, // Thicker line
+  strokeDasharray: '5, 3', // More pronounced dashed pattern
+  animate: true, 
+  animationSpeed: 15, // Faster animation
+  opacity: 0.9, // Slightly transparent
+  filter: 'drop-shadow(0 1px 2px rgba(0, 0, 0, 0.3))', // Add shadow for depth
+  transition: 'all 0.3s ease', // Smooth transition of properties
+  '&:hover': {
+    strokeWidth: 5,
+    stroke: theme.colors.primary[600],
+    opacity: 1,
+  },
 }
 
 interface BibleGraphProps {
@@ -109,9 +133,14 @@ function BibleGraphContent({ selectedVerse }: BibleGraphProps) {
   const [searchTerm, setSearchTerm] = useState('')
   const [selectedBook, setSelectedBook] = useState<string | null>(null)
   const [books, setBooks] = useState<string[]>([])
+  
+  // Track the last focused verse to prevent unnecessary re-focusing
+  const [lastFocusedVerseId, setLastFocusedVerseId] = useState<string | null>(null)
+  // Track if user has manually navigated the graph
+  const [userHasNavigated, setUserHasNavigated] = useState(false)
 
-  const { getNodes, getNode } = useReactFlow<FlowNode>()
-  const reactFlowInstance = useReactFlow<FlowNode>()
+  const { getNodes, getNode } = useReactFlow()
+  const reactFlowInstance = useReactFlow()
 
   // Add new state for expanded nodes
   const [expandedNodes, setExpandedNodes] = useState<Set<string>>(new Set())
@@ -119,6 +148,72 @@ function BibleGraphContent({ selectedVerse }: BibleGraphProps) {
   // Add loading state tracking
   const [loadingVerses, setLoadingVerses] = useState(new Set<string>())
   const loadedPagesRef = useRef(new Set<string>())
+
+  // Add state for additional features
+  const [selectionMode, setSelectionMode] = useState(SelectionMode.Partial)
+  const [showGrid, setShowGrid] = useState(true)
+  const [nodeDraggable, setNodeDraggable] = useState(true)
+  const [nodeConnectable, setNodeConnectable] = useState(false)
+  const [deleteKeyPressed, setDeleteKeyPressed] = useState(false)
+  const [edgeType, setEdgeType] = useState('smoothstep')
+  const [edgeMarkerEnd, setEdgeMarkerEnd] = useState(MarkerType.Arrow)
+  const [shiftKeyActive, setShiftKeyActive] = useState(false)
+
+  // Add state to track if we had NaN errors
+  const [hasFixedNaN, setHasFixedNaN] = useState(false)
+  
+  // Add keyboard event handlers for shift key
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Shift') {
+        setShiftKeyActive(true);
+      }
+    };
+    
+    const handleKeyUp = (event: KeyboardEvent) => {
+      if (event.key === 'Shift') {
+        setShiftKeyActive(false);
+      }
+    };
+    
+    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('keyup', handleKeyUp);
+    
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('keyup', handleKeyUp);
+    };
+  }, []);
+
+  // Simple utility to fix NaN positions in nodes
+  const validateAndFixNodePositions = useCallback(() => {
+    const hasInvalidPositions = flowNodes.some(
+      node => isNaN(node.position.x) || isNaN(node.position.y)
+    );
+    
+    if (hasInvalidPositions) {
+      console.warn('Found NaN positions in nodes, fixing...');
+      const fixedNodes = flowNodes.map(node => ({
+        ...node,
+        position: {
+          x: isNaN(node.position.x) ? 0 : node.position.x,
+          y: isNaN(node.position.y) ? 0 : node.position.y
+        }
+      }));
+      setFlowNodes(fixedNodes);
+      setHasFixedNaN(true);
+      return true;
+    }
+    
+    return false;
+  }, [flowNodes, setFlowNodes]);
+  
+  // Run position validation when nodes change
+  useEffect(() => {
+    if (flowNodes.length > 0) {
+      validateAndFixNodePositions();
+    }
+  }, [flowNodes, validateAndFixNodePositions]);
 
   // Load initial Bible graph data
   useEffect(() => {
@@ -251,6 +346,10 @@ function BibleGraphContent({ selectedVerse }: BibleGraphProps) {
   const onNodeClick = useCallback(async (event: React.MouseEvent, node: Node<BibleNodeData>) => {
     try {
       const { book, chapter, verse } = node.data
+      
+      // Set user has navigated to true when clicking on a node
+      setUserHasNavigated(true);
+      
       const response = await fetch(
         `http://localhost:8000/verses/${book}/${chapter}/${verse}`
       )
@@ -372,14 +471,38 @@ function BibleGraphContent({ selectedVerse }: BibleGraphProps) {
           newNodes.push(newNode)
         }
 
-        // Add edge with consistent styling and unique ID
+        // Add edge with enhanced styling for expanded connections
         const edgeId = createUniqueEdgeId(nodeId, targetId)
         if (!flowEdges.some(e => e.id === edgeId) && !newEdges.some(e => e.id === edgeId)) {
           newEdges.push({
             id: edgeId,
             source: nodeId,
             target: targetId,
-            ...defaultEdgeOptions,
+            type: 'smoothstep', // Smoother curves for better visibility
+            animated: true, // Add animation for better visibility
+            style: expandedEdgeStyle,
+            data: { 
+              isExpansionEdge: true,
+              label: 'Reference' // Add a label to show this is a reference connection
+            },
+            markerEnd: {
+              type: MarkerType.ArrowClosed, // Add a more prominent arrow
+              width: 15,
+              height: 15,
+              color: theme.colors.primary[500]
+            },
+            // Add a label to the edge
+            label: '→',
+            labelStyle: { 
+              fill: theme.colors.primary[700], 
+              fontWeight: 'bold',
+              fontSize: 14
+            },
+            labelBgStyle: { 
+              fill: 'white', 
+              fillOpacity: 0.8,
+              borderRadius: 4
+            }
           })
         }
       })
@@ -421,7 +544,7 @@ function BibleGraphContent({ selectedVerse }: BibleGraphProps) {
       console.error('Error handling node double click:', err)
       setError('Failed to load verse relationships')
     }
-  }, [expandedNodes, flowNodes, reactFlowInstance, calculateOptimalLayout])
+  }, [expandedNodes, flowNodes, reactFlowInstance, calculateOptimalLayout, expandedEdgeStyle])
 
   const getNodeColor = (bookName: string) => {
     return (bookName in nodeColors)
@@ -509,9 +632,27 @@ function BibleGraphContent({ selectedVerse }: BibleGraphProps) {
         return { ...edge, hidden: true }
       }
 
+      // Check if this is an expansion edge (created by double-click)
+      const isExpansionEdge = edge.data?.isExpansionEdge === true;
+      const sourceNodeExpanded = expandedNodes.has(edge.source);
+      
       if (selectedVerse) {
         const selectedVerseId = `${selectedVerse.book}-${selectedVerse.chapter}-${selectedVerse.verse}`
         const isConnected = edge.source === selectedVerseId || edge.target === selectedVerseId
+
+        // Prioritize expansion edge styling over selection styling
+        if (isExpansionEdge || sourceNodeExpanded) {
+          return {
+            ...edge,
+            hidden: false,
+            animated: true,
+            type: 'straight',
+            style: {
+              ...expandedEdgeStyle,
+              opacity: 1,
+            },
+          };
+        }
 
         return {
           ...edge,
@@ -526,13 +667,24 @@ function BibleGraphContent({ selectedVerse }: BibleGraphProps) {
         }
       }
 
+      // Prioritize expansion edge styling
+      if (isExpansionEdge || sourceNodeExpanded) {
+        return {
+          ...edge,
+          hidden: false,
+          animated: true,
+          type: 'straight',
+          style: expandedEdgeStyle,
+        };
+      }
+
       return {
         ...edge,
         hidden: false,
         ...defaultEdgeOptions,
       }
     })
-  }, [flowEdges, filteredNodes, selectedVerse])
+  }, [flowEdges, filteredNodes, selectedVerse, expandedNodes, expandedEdgeStyle])
 
   // Function to check if a verse exists in current data
   const verseExistsInGraph = useCallback((book: string, chapter: number, verse: number) => {
@@ -678,6 +830,11 @@ function BibleGraphContent({ selectedVerse }: BibleGraphProps) {
     }
   }, [flowNodes, flowEdges, books, loadingVerses, getNodeColor])
 
+  // Track when user manually navigates the graph
+  const handleViewportChange = useCallback(() => {
+    setUserHasNavigated(true);
+  }, []);
+
   // Effect to handle selected verse changes
   useEffect(() => {
     if (!selectedVerse || !isInitialized) return
@@ -691,12 +848,28 @@ function BibleGraphContent({ selectedVerse }: BibleGraphProps) {
       loadAdditionalData(book, chapter, verse)
     }
 
-    // Center view on the verse if it exists
-    const node = flowNodes.find(n => n.id === verseId)
-    if (node && reactFlowInstance) {
-      reactFlowInstance.setCenter(node.position.x, node.position.y, { duration: 800 })
+    // Only center the view if:
+    // 1. This is a different verse than the last focused one, AND
+    // 2. The user hasn't manually navigated yet
+    if (verseId !== lastFocusedVerseId && !userHasNavigated) {
+      const node = flowNodes.find(n => n.id === verseId)
+      if (node && reactFlowInstance) {
+        // Focus on the verse
+        reactFlowInstance.setCenter(node.position.x, node.position.y, { 
+          duration: 800,
+          zoom: reactFlowInstance.getZoom() // maintain current zoom level
+        });
+        
+        // Remember we've focused on this verse
+        setLastFocusedVerseId(verseId);
+        // Reset the user navigation flag when we focus on a new verse
+        setUserHasNavigated(false);
+        
+        console.log(`Focused on verse: ${verseId}`);
+      }
     }
-  }, [selectedVerse, isInitialized, verseExistsInGraph, loadAdditionalData, loadingVerses, flowNodes])
+  }, [selectedVerse, isInitialized, verseExistsInGraph, loadAdditionalData, 
+      loadingVerses, flowNodes, reactFlowInstance, lastFocusedVerseId, userHasNavigated]);
 
   if (loading) {
     return <div className="flex items-center justify-center h-screen">Loading graph data...</div>
@@ -707,7 +880,7 @@ function BibleGraphContent({ selectedVerse }: BibleGraphProps) {
   }
 
   return (
-    <div style={{ width: '100%', height: '100vh' }}>
+    <div style={{ width: '100%', height: '100%', position: 'relative' }}>
       <ReactFlow
         nodes={filteredNodes}
         edges={filteredEdges}
@@ -721,6 +894,21 @@ function BibleGraphContent({ selectedVerse }: BibleGraphProps) {
         minZoom={0.1}
         maxZoom={2}
         defaultViewport={{ x: 0, y: 0, zoom: 1 }}
+        proOptions={{ hideAttribution: true }}
+        nodesDraggable={nodeDraggable}
+        nodesConnectable={nodeConnectable}
+        snapToGrid={showGrid}
+        snapGrid={[15, 15]}
+        selectionMode={selectionMode}
+        selectionOnDrag
+        multiSelectionKeyCode="Control"
+        panOnDrag={!shiftKeyActive}
+        panOnScroll
+        zoomOnScroll
+        zoomOnPinch
+        zoomOnDoubleClick={false}
+        onMove={handleViewportChange}
+        key={`flow-${hasFixedNaN ? 'fixed' : 'normal'}-${flowNodes.length}`}
       >
         <Background
           color={theme.colors.gray[200]}
