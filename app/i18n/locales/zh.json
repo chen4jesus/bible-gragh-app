@@ -1,0 +1,45 @@
+{
+  "app": {
+    "title": "圣经图谱",
+    "description": "圣经交叉引用的交互式可视化"
+  },
+  "home": {
+    "title": "圣经知识图谱"
+  },
+  "navigation": {
+    "selectBook": "选择书卷",
+    "selectChapter": "选择章节",
+    "selectVerse": "选择经文",
+    "search": "搜索经节",
+    "allBooks": "所有书卷"
+  },
+  "graph": {
+    "loading": "加载中...",
+    "noData": "暂无数据",
+    "fitView": "适配视图",
+    "resetView": "关闭视图",
+    "zoomLevel": "缩放: {level}%",
+    "overview": "圣经地图概览",
+    "expandConnections": "展开节点连接",
+    "collapseConnections": "折叠节点连接",
+    "edgeInfo": "引用: {type}"
+  },
+  "readingPanel": {
+    "title": "圣经文本",
+    "chapter": "第 {number} 章",
+    "verse": "第 {number} 节",
+    "noSelection": "未选择经文"
+  },
+  "historyPanel": {
+    "title": "历史记录",
+    "clearAll": "清除全部",
+    "noHistory": "暂无历史记录"
+  },
+  "addNodePanel": {
+    "title": "添加经文",
+    "book": "书卷",
+    "chapter": "章节",
+    "verse": "经文",
+    "add": "添加到图谱"
+  }
+} 

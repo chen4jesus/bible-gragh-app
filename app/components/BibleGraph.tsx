@@ -22,15 +22,10 @@ import {
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import { theme } from '../styles/theme'
+import { useTranslations } from 'next-intl'
+import { bibleApi, GraphData as ApiGraphData, VerseData, CrossReferenceData } from '../api/bibleApi'
 
-interface GraphData {
-  source_book: string
-  source_chapter: number
-  source_verse: number
-  target_book: string
-  target_chapter: number
-  target_verse: number
-}
+type GraphData = ApiGraphData;
 
 interface VerseData {
   book: string
@@ -133,6 +128,13 @@ interface BibleGraphProps {
   } | null
 }
 
+export interface CustomNodeData {
+  label: string
+  type: 'note' | 'commentary' | 'reflection'
+  content: string
+  createdAt: string
+}
+
 function createUniqueEdgeId(source: string, target: string): string {
   // Sort the IDs to ensure consistent edge IDs regardless of direction
   const [first, second] = [source, target].sort()
@@ -140,6 +142,8 @@ function createUniqueEdgeId(source: string, target: string): string {
 }
 
 function BibleGraphContent({ selectedVerse }: BibleGraphProps) {
+  const t = useTranslations()
+  
   // Internal state for React Flow
   const [flowNodes, setFlowNodes] = useState<Node<BibleNodeData>[]>([])
   const [flowEdges, setFlowEdges] = useState<Edge[]>([])
@@ -247,12 +251,7 @@ function BibleGraphContent({ selectedVerse }: BibleGraphProps) {
         setError(null)
         console.log('Fetching graph data...')
         
-        const response = await fetch('http://localhost:8000/graph-data')
-        if (!response.ok) {
-          throw new Error(`HTTP error! status: ${response.status}`)
-        }
-        
-        const data: GraphData[] = await response.json()
+        const data = await bibleApi.getGraphData()
         console.log(`Received ${data.length} records from API`)
         
         if (data.length === 0) {
@@ -375,13 +374,7 @@ function BibleGraphContent({ selectedVerse }: BibleGraphProps) {
       // Store the selected node for expansion option
       setSelectedNodeForExpansion(node as BibleNode);
       
-      const response = await fetch(
-        `http://localhost:8000/verses/${book}/${chapter}/${verse}`
-      )
-      if (!response.ok) {
-        throw new Error('Failed to fetch verse details')
-      }
-      const data = await response.json()
+      const data = await bibleApi.getVerse(book, chapter, verse)
       setActiveVerse(data)
     } catch (err) {
       console.error('Error handling node click:', err)
@@ -442,40 +435,29 @@ function BibleGraphContent({ selectedVerse }: BibleGraphProps) {
   const expandSelectedNode = useCallback(() => {
     if (!selectedNodeForExpansion) return;
     
-    // This will use the same logic as the previous onNodeDoubleClick handler
-    // but triggered manually through a button
+    // Get data from the selected node
     const { book, chapter, verse } = selectedNodeForExpansion.data;
     const nodeId = `${book}-${chapter}-${verse}`;
     
-    // Focus immediately on the clicked node with a zoom animation
-    if (reactFlowInstance) {
-      reactFlowInstance.setCenter(
-        selectedNodeForExpansion.position.x, 
-        selectedNodeForExpansion.position.y, 
-        { duration: 400, zoom: 1.2 }
-      );
-    }
-    
-    // Toggle expanded state
+    // Check if node is already expanded - if it is, collapse it
     const expandedNodesArray = Array.from(expandedNodes);
     if (expandedNodes.has(nodeId)) {
-      const newExpandedNodes = new Set(expandedNodesArray.filter(id => id !== nodeId));
-      setExpandedNodes(newExpandedNodes);
+      // Remove this node ID from expanded nodes
+      expandedNodes.delete(nodeId);
+      setExpandedNodes(new Set(expandedNodesArray.filter(id => id !== nodeId)));
+      
+      // Remove all edges that are connected to this node and marked as expansion edges
+      setFlowEdges(edges => edges.filter(edge => 
+        !(edge.source === nodeId && edge.data?.isExpansionEdge)
+      ));
+      
+      // Nothing else to do for collapsing
       return;
     }
-
-    // Show loading indicator for this specific node
-    setLoadingVerses(prev => new Set(prev).add(nodeId));
     
     // Fetch related verses from the API
-    fetch(`http://localhost:8000/cross-references/${book}/${chapter}/${verse}`)
-      .then(response => {
-        if (!response.ok) {
-          throw new Error('Failed to fetch verse cross-references');
-        }
-        return response.json();
-      })
-      .then((relationships: GraphData[]) => {
+    bibleApi.getCrossReferences(book, chapter, verse)
+      .then((relationships: CrossReferenceData[]) => {
         console.log(`Received ${relationships.length} relationships for ${nodeId}`);
 
         // Calculate optimal positions for new nodes
@@ -571,19 +553,11 @@ function BibleGraphContent({ selectedVerse }: BibleGraphProps) {
           }, 600);
         }
       })
-      .catch(err => {
-        console.error('Error handling node expansion:', err);
-        setError('Failed to load verse relationships');
-      })
-      .finally(() => {
-        // Remove loading indicator
-        setLoadingVerses(prev => {
-          const next = new Set(prev);
-          next.delete(nodeId);
-          return next;
-        });
+      .catch(error => {
+        console.error('Error expanding node:', error);
+        setError('Failed to expand node connections');
       });
-  }, [selectedNodeForExpansion, expandedNodes, flowNodes, flowEdges, reactFlowInstance, calculateOptimalLayout, expandedEdgeStyle, setLoadingVerses]);
+  }, [selectedNodeForExpansion, expandedNodes, flowNodes, flowEdges, reactFlowInstance, calculateOptimalLayout, expandedEdgeStyle, setFlowEdges]);
 
   // Add event handler for edge mouse enter/leave to show edge data
   const onEdgeMouseEnter = useCallback((event: React.MouseEvent, edge: Edge) => {
@@ -837,12 +811,7 @@ function BibleGraphContent({ selectedVerse }: BibleGraphProps) {
       setLoadingVerses(prev => new Set(prev).add(verseId))
       console.log('Fetching additional graph data for:', pageKey)
       
-      const response = await fetch(`http://localhost:8000/graph-data?book=${book}&chapter=${chapter}&verse=${verse}&limit=100`)
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`)
-      }
-      
-      const data: GraphData[] = await response.json()
+      const data = await bibleApi.getFilteredGraphData(book, chapter, verse, 100)
       console.log(`Received ${data.length} additional records for ${pageKey}`)
       
       if (data.length === 0) {
@@ -1008,15 +977,14 @@ function BibleGraphContent({ selectedVerse }: BibleGraphProps) {
       return foundTargetVerse;
 
     } catch (error) {
-      console.error('Error fetching additional graph data:', error);
-      setError(error instanceof Error ? error.message : 'An error occurred');
-      return false;
+      console.error(`Error loading additional data for ${book} ${chapter}:${verse}:`, error)
+      return false
     } finally {
       setLoadingVerses(prev => {
-        const next = new Set(prev);
-        next.delete(verseId);
-        return next;
-      });
+        const newSet = new Set(prev)
+        newSet.delete(verseId)
+        return newSet
+      })
     }
   }, [flowNodes, flowEdges, books, loadingVerses, getNodeColor]);
 
@@ -1091,6 +1059,18 @@ function BibleGraphContent({ selectedVerse }: BibleGraphProps) {
       return true;
     } else if (!node) {
       console.log(`Could not find node for verse: ${verseId}`);
+      // Make an API call to retrieve the verse and its connections
+      const [book, chapter, verse] = verseId.split('-');
+      loadAdditionalData(book, parseInt(chapter), parseInt(verse))
+        .then(success => {
+          if (success) {
+            // Try focusing again after data is loaded
+            focusOnSelectedVerse(verseId);
+          }
+        })
+        .catch(err => {
+          console.error(`Failed to load data for verse: ${verseId}`, err);
+        });
       return false;
     }
     return false;
@@ -1099,94 +1079,86 @@ function BibleGraphContent({ selectedVerse }: BibleGraphProps) {
   // Implement a more robust verse loading system that handles retries
   const loadVerseWithRetries = useCallback(async (book: string, chapter: number, verse: number, maxRetries = 2) => {
     const verseId = `${book}-${chapter}-${verse}`;
-    console.log(`Attempting to load verse: ${verseId}`);
-    
-    // First check if the verse already exists
-    if (verseExistsInGraph(book, chapter, verse)) {
-      return focusOnSelectedVerse(verseId);
-    }
-    
-    // If not, try to load it with retries
     let retries = 0;
     let success = false;
     
-    while (retries < maxRetries && !success) {
-      // Try broader searches if we're retrying
-      const searchBook = book;
-      const searchChapter = chapter;
-      const searchVerse = retries === 0 ? verse : 1; // On retry, search for the whole chapter
-      
-      console.log(`Loading attempt ${retries + 1} for ${searchBook}-${searchChapter}-${searchVerse}`);
-      
-      // Load the data - if we found our target verse, mark as success
-      const found = await loadAdditionalData(searchBook, searchChapter, searchVerse);
-      
-      if (found) {
-        // Try to focus on it now
+    // First check if the verse already exists in the graph
+    success = focusOnSelectedVerse(verseId);
+    if (success) return true;
+
+    // If not found, try to load additional data around this verse
+    if (!success) {
+      success = await loadAdditionalData(book, chapter, verse);
+      if (success) {
+        // Wait a bit for state updates
+        await new Promise(resolve => setTimeout(resolve, 300));
         success = focusOnSelectedVerse(verseId);
-        if (success) break;
       }
-      
-      // Slight delay before retry to allow React to update state
-      await new Promise(resolve => setTimeout(resolve, 100));
-      retries++;
     }
-    
-    // Try once more to focus in case the node was added but not yet available when we checked
-    if (!success && verseExistsInGraph(book, chapter, verse)) {
-      success = focusOnSelectedVerse(verseId);
+
+    // Try loading related chapters if still not found
+    while (!success && retries < maxRetries) {
+      retries++;
+      console.log(`Retry ${retries} for ${verseId}`);
+      
+      // Try to load previous and next chapters
+      const prevChapter = chapter > 1 ? chapter - 1 : chapter;
+      const nextChapter = chapter + 1;
+      
+      const prevSuccess = await loadAdditionalData(book, prevChapter, 1);
+      const nextSuccess = await loadAdditionalData(book, nextChapter, 1);
+      
+      if (prevSuccess || nextSuccess) {
+        // Wait a bit for state updates
+        await new Promise(resolve => setTimeout(resolve, 300));
+        success = focusOnSelectedVerse(verseId);
+      }
     }
     
     // Make a direct API call for the specific verse if all else fails
     if (!success) {
       try {
         console.log(`Making direct verse API call for ${verseId}`);
-        const response = await fetch(
-          `http://localhost:8000/verses/${book}/${chapter}/${verse}`
-        );
+        const data = await bibleApi.getVerse(book, chapter, verse);
         
-        if (response.ok) {
-          const data = await response.json();
+        // If we got data but still no node, create one manually
+        if (!verseExistsInGraph(book, chapter, verse)) {
+          const baseX = (chapter * 250) % 2000;
+          const baseY = Math.floor(chapter / 8) * 200;
           
-          // If we got data but still no node, create one manually
-          if (!verseExistsInGraph(book, chapter, verse)) {
-            const baseX = (chapter * 250) % 2000;
-            const baseY = Math.floor(chapter / 8) * 200;
-            
-            const standaloneNode: BibleNode = {
-              id: verseId,
-              type: 'default',
-              position: { 
-                x: baseX + (verse * 50),
-                y: baseY + (verse * 30)
-              },
-              data: {
-                label: `${book} ${chapter}:${verse}`,
-                book: book,
-                chapter: chapter,
-                verse: verse,
-              },
-              sourcePosition: Position.Right,
-              targetPosition: Position.Left,
-              style: {
-                ...nodeStyle,
-                background: getNodeColor(book),
-                borderWidth: 2,
-                borderStyle: 'dashed',
-                borderColor: theme.colors.primary[500],
-              },
-            };
-            
-            // Add the node to the graph
-            setFlowNodes(nodes => [...nodes, standaloneNode]);
-            console.log(`Manually added standalone node for: ${verseId}`);
-            
-            // Wait a bit for state update
-            await new Promise(resolve => setTimeout(resolve, 100));
-            
-            // Try to focus again
-            success = focusOnSelectedVerse(verseId);
-          }
+          const standaloneNode: BibleNode = {
+            id: verseId,
+            type: 'default',
+            position: { 
+              x: baseX + (verse * 50),
+              y: baseY + (verse * 30)
+            },
+            data: {
+              label: `${book} ${chapter}:${verse}`,
+              book: book,
+              chapter: chapter,
+              verse: verse,
+            },
+            sourcePosition: Position.Right,
+            targetPosition: Position.Left,
+            style: {
+              ...nodeStyle,
+              background: getNodeColor(book),
+              borderWidth: 2,
+              borderStyle: 'dashed',
+              borderColor: theme.colors.primary[500],
+            },
+          };
+          
+          // Add the node to the graph
+          setFlowNodes(nodes => [...nodes, standaloneNode]);
+          console.log(`Manually added standalone node for: ${verseId}`);
+          
+          // Wait a bit for state update
+          await new Promise(resolve => setTimeout(resolve, 100));
+          
+          // Try to focus again
+          success = focusOnSelectedVerse(verseId);
         }
       } catch (err) {
         console.error(`Failed to make direct verse API call for ${verseId}:`, err);
@@ -1194,7 +1166,7 @@ function BibleGraphContent({ selectedVerse }: BibleGraphProps) {
     }
     
     return success;
-  }, [verseExistsInGraph, loadAdditionalData, focusOnSelectedVerse, getNodeColor]);
+  }, [loadAdditionalData, focusOnSelectedVerse, verseExistsInGraph]);
 
   // Update the useEffect to use our new more robust loading system
   useEffect(() => {
@@ -1227,8 +1199,12 @@ function BibleGraphContent({ selectedVerse }: BibleGraphProps) {
   return (
     <div style={{ width: '100%', height: '100%', position: 'relative' }}>
       <ReactFlow
-        nodes={filteredNodes}
-        edges={filteredEdges}
+        nodes={filteredNodes.filter((node, index, self) => 
+          index === self.findIndex(n => n.id === node.id)
+        )}
+        edges={filteredEdges.filter((edge, index, self) => 
+          index === self.findIndex(e => e.id === edge.id)
+        )}
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
         onNodeClick={onNodeClick}
@@ -1274,20 +1250,20 @@ function BibleGraphContent({ selectedVerse }: BibleGraphProps) {
           <div className="space-y-4">
             <div>
               <label htmlFor="search" className="block text-sm font-medium text-gray-700">
-                Search Verses
+                {t('navigation.search')}
               </label>
               <input
                 id="search"
                 type="text"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                placeholder="Search..."
+                placeholder={`${t('navigation.search')}...`}
                 className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
               />
             </div>
             <div>
               <label htmlFor="book" className="block text-sm font-medium text-gray-700">
-                Filter by Book
+                {t('navigation.selectBook')}
               </label>
               <select
                 id="book"
@@ -1295,9 +1271,9 @@ function BibleGraphContent({ selectedVerse }: BibleGraphProps) {
                 onChange={(e) => setSelectedBook(e.target.value || null)}
                 className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
               >
-                <option value="">All Books</option>
+                <option value="" key="all-books">{t('navigation.allBooks')}</option>
                 {books.map((book) => (
-                  <option key={book} value={book}>
+                  <option key={`book-${book}`} value={book}>
                     {book}
                   </option>
                 ))}
@@ -1307,32 +1283,34 @@ function BibleGraphContent({ selectedVerse }: BibleGraphProps) {
         </Panel>
         {activeVerse && (
           <Panel position="top-right" className="bg-white p-4 rounded-lg shadow-lg">
-            <div className="space-y-4">
+            <div className="space-y-4 flex flex-col h-full">
               <div>
                 <h3 className="text-lg font-medium text-gray-900">
                   {activeVerse.book} {activeVerse.chapter}:{activeVerse.verse}
                 </h3>
                 <p className="mt-1 text-sm text-gray-500">{activeVerse.text}</p>
               </div>
-              {selectedNodeForExpansion && (
+              <div className="flex justify-end items-center gap-2 mt-auto">
+                {selectedNodeForExpansion && (
+                  <button
+                    onClick={expandSelectedNode}
+                    className="px-4 py-2 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors shadow-sm w-32"
+                  >
+                    {expandedNodes.has(`${selectedNodeForExpansion.data.book}-${selectedNodeForExpansion.data.chapter}-${selectedNodeForExpansion.data.verse}`) 
+                      ? t('graph.collapseConnections') 
+                      : t('graph.expandConnections')}
+                  </button>
+                )}
                 <button
-                  onClick={expandSelectedNode}
-                  className="mt-2 px-3 py-2 text-sm bg-indigo-600 text-white rounded-md hover:bg-indigo-700 transition-colors"
+                  onClick={() => {
+                    setActiveVerse(null);
+                    setSelectedNodeForExpansion(null);
+                  }}
+                  className="px-4 py-2 text-sm border border-gray-300 bg-white text-gray-700 rounded-md hover:bg-gray-50 transition-colors shadow-sm w-24"
                 >
-                  {expandedNodes.has(`${selectedNodeForExpansion.data.book}-${selectedNodeForExpansion.data.chapter}-${selectedNodeForExpansion.data.verse}`) 
-                    ? 'Collapse Node Connections' 
-                    : 'Expand Node Connections'}
+                  {t('graph.resetView')}
                 </button>
-              )}
-              <button
-                onClick={() => {
-                  setActiveVerse(null);
-                  setSelectedNodeForExpansion(null);
-                }}
-                className="text-sm text-gray-500 hover:text-gray-700"
-              >
-                Close
-              </button>
+              </div>
             </div>
           </Panel>
         )}

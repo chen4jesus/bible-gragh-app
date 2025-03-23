@@ -3,6 +3,7 @@ import { ReadingHistory, BibleBookmark } from '../hooks/useBibleReader'
 import { Card } from './ui/Card'
 import { Button } from './ui/Button'
 import { theme } from '../styles/theme'
+import { useTranslations } from 'next-intl'
 
 interface HistoryPanelProps {
   history: ReadingHistory[]
@@ -17,120 +18,107 @@ export function HistoryPanel({
   onSelectVerse,
   onRemoveBookmark,
 }: HistoryPanelProps) {
+  const t = useTranslations()
   const [activeTab, setActiveTab] = useState<'history' | 'bookmarks'>('history')
 
   return (
-    <Card variant="elevated" padding="none" className="w-80">
-      <div className="flex border-b">
-        <button
-          className={`flex-1 px-4 py-3 text-sm font-medium transition-colors ${
-            activeTab === 'history'
-              ? 'border-b-2 border-primary-500 text-primary-600 bg-primary-50'
-              : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'
-          }`}
-          onClick={() => setActiveTab('history')}
-        >
-          Reading History
-        </button>
-        <button
-          className={`flex-1 px-4 py-3 text-sm font-medium transition-colors ${
-            activeTab === 'bookmarks'
-              ? 'border-b-2 border-primary-500 text-primary-600 bg-primary-50'
-              : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'
-          }`}
-          onClick={() => setActiveTab('bookmarks')}
-        >
-          Bookmarks
-        </button>
+    <Card className="h-full flex flex-col">
+      <div className="border-b">
+        <h2 className="text-xl font-semibold p-4">{t('historyPanel.title')}</h2>
+        <div className="flex">
+          <button
+            className={`flex-1 px-4 py-2 text-sm font-medium transition-colors ${
+              activeTab === 'history'
+                ? 'bg-blue-50 text-blue-700 border-b-2 border-blue-500'
+                : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'
+            }`}
+            onClick={() => setActiveTab('history')}
+          >
+            {t('historyPanel.title')}
+          </button>
+          <button
+            className={`flex-1 px-4 py-2 text-sm font-medium transition-colors ${
+              activeTab === 'bookmarks'
+                ? 'bg-blue-50 text-blue-700 border-b-2 border-blue-500'
+                : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'
+            }`}
+            onClick={() => setActiveTab('bookmarks')}
+          >
+            Bookmarks
+          </button>
+        </div>
       </div>
 
-      <div className="p-4">
+      <div className="flex-1 overflow-auto p-4">
         {activeTab === 'history' ? (
-          <div className="space-y-2">
-            {history.map((item, index) => (
-              <button
-                key={index}
-                onClick={() => onSelectVerse(item.verseId)}
-                className="w-full text-left p-3 rounded-md bg-white border border-gray-200 hover:border-primary-300 hover:bg-primary-50 transition-colors"
-              >
-                <div className="text-sm font-medium text-gray-900">{item.verseId}</div>
-                <div className="text-xs text-gray-500 mt-1">
-                  {new Date(item.timestamp).toLocaleString()}
+          <div>
+            {history.length > 0 ? (
+              <>
+                <div className="flex justify-between mb-3">
+                  <div className="text-sm text-gray-500">{history.length} items</div>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="text-red-500 hover:text-red-700 text-xs"
+                  >
+                    {t('historyPanel.clearAll')}
+                  </Button>
                 </div>
-              </button>
-            ))}
-            {history.length === 0 && (
-              <div className="text-center py-8">
-                <svg
-                  className="mx-auto h-12 w-12 text-gray-400"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={1}
-                    d="M12 6v6m0 0v6m0-6h6m-6 0H6"
-                  />
-                </svg>
-                <p className="mt-2 text-sm text-gray-500">No reading history yet</p>
+                <div className="space-y-2">
+                  {history.map((item) => (
+                    <div
+                      key={item.id}
+                      onClick={() => onSelectVerse(item.id)}
+                      className="p-2 rounded hover:bg-gray-50 cursor-pointer transition-colors"
+                    >
+                      <div className="font-medium">
+                        {item.book} {item.chapter}:{item.verse}
+                      </div>
+                      <div className="text-sm text-gray-500">
+                        {new Date(item.timestamp).toLocaleString()}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </>
+            ) : (
+              <div className="text-gray-500 text-center py-8">
+                {t('historyPanel.noHistory')}
               </div>
             )}
           </div>
         ) : (
-          <div className="space-y-2">
-            {bookmarks.map((bookmark) => (
-              <div
-                key={bookmark.id}
-                className="group relative p-3 rounded-md bg-white border border-gray-200 hover:border-primary-300 hover:bg-primary-50 transition-colors"
-              >
-                <button
-                  onClick={() => onSelectVerse(bookmark.verseId)}
-                  className="w-full text-left"
-                >
-                  <div className="text-sm font-medium text-gray-900">
-                    {bookmark.verseId}
-                  </div>
-                  <div className="text-xs text-gray-500 mt-1">{bookmark.label}</div>
-                </button>
-                <button
-                  onClick={() => onRemoveBookmark(bookmark.id)}
-                  className="absolute top-2 right-2 p-1 rounded-full text-gray-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"
-                >
-                  <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    className="h-4 w-4"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    stroke="currentColor"
+          <div>
+            {bookmarks.length > 0 ? (
+              <div className="space-y-2">
+                {bookmarks.map((bookmark) => (
+                  <div
+                    key={bookmark.id}
+                    className="p-3 bg-gray-50 rounded-lg flex justify-between items-start"
                   >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M6 18L18 6M6 6l12 12"
-                    />
-                  </svg>
-                </button>
+                    <div 
+                      className="cursor-pointer" 
+                      onClick={() => onSelectVerse(bookmark.verseId)}
+                    >
+                      <div className="font-medium">
+                        {bookmark.book} {bookmark.chapter}:{bookmark.verse}
+                      </div>
+                      <div className="text-sm text-gray-500">
+                        {new Date(bookmark.timestamp).toLocaleString()}
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => onRemoveBookmark(bookmark.id)}
+                      className="text-red-500 hover:text-red-700"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                ))}
               </div>
-            ))}
-            {bookmarks.length === 0 && (
-              <div className="text-center py-8">
-                <svg
-                  className="mx-auto h-12 w-12 text-gray-400"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={1}
-                    d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z"
-                  />
-                </svg>
-                <p className="mt-2 text-sm text-gray-500">No bookmarks yet</p>
+            ) : (
+              <div className="text-gray-500 text-center py-8">
+                No bookmarks yet
               </div>
             )}
           </div>

@@ -1,3 +1,5 @@
+const withNextIntl = require('next-intl/plugin')('./app/i18n/request.ts');
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   // Enable reading files from the data directory
@@ -10,4 +12,4 @@ const nextConfig = {
   }
 }
 
-module.exports = nextConfig 
+module.exports = withNextIntl(nextConfig) 

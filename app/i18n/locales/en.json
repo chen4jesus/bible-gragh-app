@@ -1,0 +1,45 @@
+{
+  "app": {
+    "title": "Bible Graph",
+    "description": "Interactive visualization of Bible cross-references"
+  },
+  "home": {
+    "title": "Bible Knowledge Graph"
+  },
+  "navigation": {
+    "selectBook": "Select Book",
+    "selectChapter": "Select Chapter",
+    "selectVerse": "Select Verse",
+    "search": "Search Verse",
+    "allBooks": "All Books"
+  },
+  "graph": {
+    "loading": "Loading...",
+    "noData": "No data available",
+    "fitView": "Fit View",
+    "resetView": "Close View",
+    "zoomLevel": "Zoom: {level}%",
+    "overview": "Bible Map Overview",
+    "expandConnections": "Expand Node Connections",
+    "collapseConnections": "Collapse Node Connections",
+    "edgeInfo": "Reference: {type}"
+  },
+  "readingPanel": {
+    "title": "Bible Text",
+    "chapter": "Chapter {number}",
+    "verse": "Verse {number}",
+    "noSelection": "No verse selected"
+  },
+  "historyPanel": {
+    "title": "History",
+    "clearAll": "Clear All",
+    "noHistory": "No history available"
+  },
+  "addNodePanel": {
+    "title": "Add Verse",
+    "book": "Book",
+    "chapter": "Chapter",
+    "verse": "Verse",
+    "add": "Add to Graph"
+  }
+} 

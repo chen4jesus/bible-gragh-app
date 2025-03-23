@@ -3,6 +3,7 @@ import { BibleNote, BibleBookmark } from '../hooks/useBibleReader'
 import { Card } from './ui/Card'
 import { Button } from './ui/Button'
 import { theme } from '../styles/theme'
+import { useTranslations } from 'next-intl'
 
 interface ReadingPanelProps {
   verse: {
@@ -30,6 +31,7 @@ export function ReadingPanel({
   onToggleBookmark,
   onClose,
 }: ReadingPanelProps) {
+  const t = useTranslations()
   const [newNote, setNewNote] = useState('')
   const [editingNoteId, setEditingNoteId] = useState<string | null>(null)
   const [editingNoteText, setEditingNoteText] = useState('')
@@ -55,135 +57,120 @@ export function ReadingPanel({
   }
 
   return (
-    <Card variant="elevated" padding="lg" className="max-w-2xl w-full">
-      <div className="flex justify-between items-start mb-6">
-        <div>
-          <h2 className="text-2xl font-bold text-gray-900">
-            {verse.book} {verse.chapter}:{verse.verse}
-          </h2>
-          <p className="text-sm text-gray-500 mt-1">Reading Mode</p>
-        </div>
-        <div className="flex gap-2">
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={onToggleBookmark}
-            className={`${
-              isBookmarked ? 'text-yellow-500' : 'text-gray-400'
-            } hover:text-yellow-600`}
-          >
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              className="h-5 w-5"
-              fill={isBookmarked ? 'currentColor' : 'none'}
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z"
-              />
-            </svg>
-          </Button>
-          <Button variant="ghost" size="sm" onClick={onClose}>
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              className="h-5 w-5"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M6 18L18 6M6 6l12 12"
-              />
-            </svg>
-          </Button>
-        </div>
+    <Card className="p-4 min-h-full flex flex-col">
+      <div className="flex justify-between items-center border-b pb-3 mb-4">
+        <h2 className="text-xl font-semibold">{t('readingPanel.title')}</h2>
+        <Button variant="ghost" size="sm" onClick={onClose}>
+          ✕
+        </Button>
       </div>
 
-      <div className="prose prose-lg max-w-none mb-8">
-        <p className="text-gray-900 leading-relaxed">{verse.text}</p>
-      </div>
-
-      <div className="space-y-6">
-        <div>
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">Notes</h3>
-          <div className="space-y-4">
-            {notes.map((note) => (
-              <Card
-                key={note.id}
-                variant="outlined"
-                padding="md"
-                className="transition-all duration-200 hover:border-gray-400"
+      {verse ? (
+        <div className="flex-1">
+          <div className="bg-gray-50 p-4 rounded-lg mb-4">
+            <div className="flex justify-between mb-2">
+              <h3 className="font-medium text-gray-700">
+                {verse.book} {t('readingPanel.chapter', { number: verse.chapter })}
+              </h3>
+              <button
+                onClick={onToggleBookmark}
+                className={`text-xl ${isBookmarked ? 'text-yellow-500' : 'text-gray-300'}`}
+                title={isBookmarked ? 'Remove Bookmark' : 'Add Bookmark'}
               >
-                {editingNoteId === note.id ? (
-                  <div className="space-y-3">
-                    <textarea
-                      value={editingNoteText}
-                      onChange={(e) => setEditingNoteText(e.target.value)}
-                      className="w-full p-2 border rounded-md focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-                      rows={3}
-                    />
-                    <div className="flex justify-end gap-2">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => setEditingNoteId(null)}
-                      >
-                        Cancel
-                      </Button>
-                      <Button variant="primary" size="sm" onClick={handleSaveEdit}>
-                        Save
-                      </Button>
-                    </div>
+                ★
+              </button>
+            </div>
+            <p className="text-lg mb-2">
+              <span className="font-bold text-blue-600">{t('readingPanel.verse', { number: verse.verse })}</span> {verse.text}
+            </p>
+          </div>
+
+          <div className="mt-6">
+            <h3 className="font-medium text-gray-700 mb-2">Notes</h3>
+            <div className="space-y-3 mb-4 max-h-60 overflow-y-auto p-1">
+              {notes.length === 0 ? (
+                <p className="text-gray-500 text-sm italic">No notes yet. Add one below!</p>
+              ) : (
+                notes.map(note => (
+                  <div key={note.id} className="bg-gray-50 p-3 rounded-lg">
+                    {editingNoteId === note.id ? (
+                      <div>
+                        <textarea
+                          value={editingNoteText}
+                          onChange={(e) => setEditingNoteText(e.target.value)}
+                          className="w-full p-2 border rounded-md mb-2 text-sm"
+                          rows={3}
+                        />
+                        <div className="flex justify-end space-x-2">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => setEditingNoteId(null)}
+                          >
+                            Cancel
+                          </Button>
+                          <Button
+                            variant="primary"
+                            size="sm"
+                            onClick={handleSaveEdit}
+                          >
+                            Save
+                          </Button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div>
+                        <p className="text-sm mb-2">{note.text}</p>
+                        <div className="flex justify-between items-center text-xs text-gray-500">
+                          <span>{new Date(note.date).toLocaleDateString()}</span>
+                          <div className="space-x-2">
+                            <button
+                              onClick={() => handleEditNote(note)}
+                              className="text-blue-500 hover:text-blue-700"
+                            >
+                              Edit
+                            </button>
+                            <button
+                              onClick={() => onDeleteNote(note.id)}
+                              className="text-red-500 hover:text-red-700"
+                            >
+                              Delete
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    )}
                   </div>
-                ) : (
-                  <div>
-                    <p className="text-gray-700 whitespace-pre-wrap">{note.text}</p>
-                    <div className="flex justify-end gap-2 mt-3">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => handleEditNote(note)}
-                      >
-                        Edit
-                      </Button>
-                      <Button
-                        variant="danger"
-                        size="sm"
-                        onClick={() => onDeleteNote(note.id)}
-                      >
-                        Delete
-                      </Button>
-                    </div>
-                  </div>
-                )}
-              </Card>
-            ))}
-            <Card variant="outlined" padding="md">
-              <div className="space-y-3">
-                <textarea
-                  value={newNote}
-                  onChange={(e) => setNewNote(e.target.value)}
-                  placeholder="Add a note..."
-                  className="w-full p-2 border rounded-md focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-                  rows={3}
-                />
-                <div className="flex justify-end">
-                  <Button variant="primary" onClick={handleAddNote}>
-                    Add Note
-                  </Button>
-                </div>
+                ))
+              )}
+            </div>
+
+            <div className="mt-2">
+              <textarea
+                value={newNote}
+                onChange={(e) => setNewNote(e.target.value)}
+                placeholder="Add a note..."
+                className="w-full p-3 border rounded-md text-sm"
+                rows={3}
+              />
+              <div className="flex justify-end mt-2">
+                <Button
+                  variant="primary"
+                  size="sm"
+                  onClick={handleAddNote}
+                  disabled={!newNote.trim()}
+                >
+                  Add Note
+                </Button>
               </div>
-            </Card>
+            </div>
           </div>
         </div>
-      </div>
+      ) : (
+        <div className="flex-1 flex items-center justify-center">
+          <p className="text-gray-500">{t('readingPanel.noSelection')}</p>
+        </div>
+      )}
     </Card>
   )
 } 
