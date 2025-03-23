@@ -636,6 +636,14 @@ function BibleGraphContent({ selectedVerse }: BibleGraphProps) {
         ? node.data.label.toLowerCase().includes(searchTerm.toLowerCase())
         : true
       
+      // Apply book filter consistently for all cases
+      const matchesBook = selectedBook 
+        ? node.data.book === selectedBook 
+        : true
+      
+      // Only show nodes that match both search and book filter
+      const matchesFilters = matchesSearch && matchesBook
+      
       // If a verse is selected, show it and its connected nodes
       if (selectedVerse) {
         const selectedVerseId = `${selectedVerse.book}-${selectedVerse.chapter}-${selectedVerse.verse}`
@@ -660,7 +668,7 @@ function BibleGraphContent({ selectedVerse }: BibleGraphProps) {
         // Update node style based on connection, expansion status, and focus status
         return {
           ...node,
-          hidden: !(isConnected || isExpanded) || !matchesSearch,
+          hidden: !(isConnected || isExpanded) || !matchesFilters,
           style: {
             ...node.style,
             opacity: (isConnected || isExpanded) ? 1 : 0.3,
@@ -682,14 +690,10 @@ function BibleGraphContent({ selectedVerse }: BibleGraphProps) {
         }
       }
       
-      // Otherwise, filter by selected book if any
-      const matchesBook = selectedBook 
-        ? node.data.book === selectedBook 
-        : true
-
+      // No verse selected, just apply the combined filters
       return {
         ...node,
-        hidden: !(matchesSearch && matchesBook),
+        hidden: !matchesFilters,
         style: {
           ...node.style,
           opacity: 1,
