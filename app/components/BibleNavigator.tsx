@@ -166,8 +166,8 @@ export function BibleNavigator({
 
   return (
     <div className="flex flex-col h-full">
-      <div className="grid grid-cols-2 gap-4 mb-4">
-        <div>
+      <div className="flex gap-4 mb-4">
+        <div className="w-1/2">
           <label htmlFor="book-select" className="block text-sm font-medium text-gray-700 mb-1">
             {t('navigation.selectBook')}
           </label>
@@ -185,7 +185,7 @@ export function BibleNavigator({
             ))}
           </select>
         </div>
-        <div>
+        <div className="w-1/4">
           <label htmlFor="chapter-select" className="block text-sm font-medium text-gray-700 mb-1">
             {t('navigation.selectChapter')}
           </label>
@@ -203,25 +203,24 @@ export function BibleNavigator({
             ))}
           </select>
         </div>
-      </div>
-
-      <div className="mb-4">
-        <label htmlFor="verse-select" className="block text-sm font-medium text-gray-700 mb-1">
-          {t('navigation.selectVerse')}
-        </label>
-        <select
-          id="verse-select"
-          value={selectedVerse}
-          onChange={handleVerseChange}
-          className="w-full p-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
-          disabled={isLoading}
-        >
-          {currentChapter?.verses.map((verse) => (
-            <option key={verse.verse} value={verse.verse}>
-              {verse.verse}
-            </option>
-          ))}
-        </select>
+        <div className="w-1/4">
+          <label htmlFor="verse-select" className="block text-sm font-medium text-gray-700 mb-1">
+            {t('navigation.selectVerse')}
+          </label>
+          <select
+            id="verse-select"
+            value={selectedVerse}
+            onChange={handleVerseChange}
+            className="w-full p-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+            disabled={isLoading}
+          >
+            {currentChapter?.verses.map((verse) => (
+              <option key={verse.verse} value={verse.verse}>
+                {verse.verse}
+              </option>
+            ))}
+          </select>
+        </div>
       </div>
 
       <div className="overflow-auto flex-grow scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100">
