@@ -1,35 +1,26 @@
-'use client'
+'use client';
 
-import { useState, useCallback } from 'react'
-import { BibleGraph } from '../components/BibleGraph'
-import { BibleNavigator } from '../components/BibleNavigator'
-import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '../components/ui/resizable'
-import { useTranslations } from 'next-intl'
-import Link from 'next/link'
-import { useParams } from 'next/navigation'
+import { useState, useCallback } from 'react';
+import { BibleGraph } from '../components/BibleGraph';
+import { BibleNavigator } from '../components/BibleNavigator';
+import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '../components/ui/resizable';
+import { useTranslations } from 'next-intl';
 
-export default function Home() {
-  const t = useTranslations()
-  const { locale } = useParams() as { locale: string }
-  const otherLocale = locale === 'en' ? 'zh' : 'en'
+export default function LocalizedHomePage() {
+  const t = useTranslations();
   
   const [currentVerse, setCurrentVerse] = useState({
     book: '创世记',
     chapter: 1,
     verse: 1,
-  })
+  });
 
   const handleVerseSelect = useCallback((book: string, chapter: number, verse: number) => {
-    setCurrentVerse({ book, chapter, verse })
-  }, [])
+    setCurrentVerse({ book, chapter, verse });
+  }, []);
 
   return (
     <main className="h-screen w-screen overflow-hidden bg-gray-50">
-      <div className="absolute top-2 right-4 z-10">
-        <Link href={`/${otherLocale}`} className="text-sm text-blue-600 hover:text-blue-800">
-          {otherLocale === 'en' ? 'English' : '中文'}
-        </Link>
-      </div>
       <ResizablePanelGroup
         direction="horizontal"
         className="h-full w-full"
@@ -63,5 +54,5 @@ export default function Home() {
         </ResizablePanel>
       </ResizablePanelGroup>
     </main>
-  )
+  );
 } 

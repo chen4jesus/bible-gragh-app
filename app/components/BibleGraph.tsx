@@ -24,6 +24,7 @@ import '@xyflow/react/dist/style.css'
 import { theme } from '../styles/theme'
 import { useTranslations } from 'next-intl'
 import { bibleApi, GraphData as ApiGraphData, VerseData, CrossReferenceData } from '../api/bibleApi'
+import VerseKnowledgeCards from './VerseKnowledgeCards'
 
 type GraphData = ApiGraphData;
 
@@ -153,6 +154,8 @@ function BibleGraphContent({ selectedVerse }: BibleGraphProps) {
   const [lastFocusedVerseId, setLastFocusedVerseId] = useState<string | null>(null)
   // Track if user has manually navigated the graph
   const [userHasNavigated, setUserHasNavigated] = useState(false)
+  // Track initial data load
+  const [initialDataLoaded, setInitialDataLoaded] = useState(false)
 
   const { getNodes, getNode } = useReactFlow()
   const reactFlowInstance = useReactFlow()
@@ -183,69 +186,18 @@ function BibleGraphContent({ selectedVerse }: BibleGraphProps) {
   
   // Add a new state to track currently selected node for expansion
   const [selectedNodeForExpansion, setSelectedNodeForExpansion] = useState<BibleNode | null>(null);
-
-  // Add keyboard event handlers for shift key
+  
+  // Add initial data loading - load Genesis 1:1 on first render
   useEffect(() => {
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Shift') {
-        setShiftKeyActive(true);
-      }
-    };
-    
-    const handleKeyUp = (event: KeyboardEvent) => {
-      if (event.key === 'Shift') {
-        setShiftKeyActive(false);
-      }
-    };
-    
-    window.addEventListener('keydown', handleKeyDown);
-    window.addEventListener('keyup', handleKeyUp);
-    
-    return () => {
-      window.removeEventListener('keydown', handleKeyDown);
-      window.removeEventListener('keyup', handleKeyUp);
-    };
-  }, []);
-
-  // Add function to fix NaN positions
-  const validateAndFixNodePositions = useCallback(() => {
-    let shouldUpdate = false;
-    const fixedNodes = flowNodes.map(node => {
-      if (
-        isNaN(node.position.x) || 
-        isNaN(node.position.y) ||
-        !isFinite(node.position.x) ||
-        !isFinite(node.position.y)
-      ) {
-        shouldUpdate = true;
-        return {
-          ...node,
-          position: {
-            x: Math.random() * 500, // Random position as fallback
-            y: Math.random() * 500,
-          },
-        };
-      }
-      return node;
-    });
-    
-    if (shouldUpdate) {
-      console.log('Fixed NaN positions in nodes');
-      setFlowNodes(fixedNodes);
-      setHasFixedNaN(true);
+    if (!initialDataLoaded && flowNodes.length === 0 && !loading) {
+      setInitialDataLoaded(true); // Set flag to prevent multiple loads
+      loadVerseData('创世记', 1, 1);
     }
-  }, [flowNodes]);
-
-  // Check for NaN positions periodically
-  useEffect(() => {
-    if (flowNodes.length > 0) {
-      validateAndFixNodePositions();
-    }
-  }, [flowNodes, validateAndFixNodePositions]);
+  }, [initialDataLoaded, flowNodes.length, loading]);
 
   // Watch for selected verse changes from the Bible Navigator
   useEffect(() => {
-    if (selectedVerse) {
+    if (selectedVerse && !loading) {
       const verseId = `${selectedVerse.book}-${selectedVerse.chapter}-${selectedVerse.verse}`;
       
       // Check if we already have this verse loaded
@@ -1223,7 +1175,7 @@ function BibleGraphContent({ selectedVerse }: BibleGraphProps) {
 
   // Update the useEffect to use our new more robust loading system
   useEffect(() => {
-    if (!selectedVerse) return;
+    if (!selectedVerse || loading) return;
 
     const { book, chapter, verse } = selectedVerse;
     const verseId = `${book}-${chapter}-${verse}`;
@@ -1236,10 +1188,17 @@ function BibleGraphContent({ selectedVerse }: BibleGraphProps) {
     // Reset user navigation when verse is selected externally
     setUserHasNavigated(false);
     
+    // Check if node already exists
+    const existingNode = flowNodes.find(node => node.id === verseId);
+    if (existingNode) {
+      focusOnNode(verseId);
+      return;
+    }
+    
     // Use our loadVerseData function to load verse data
     loadVerseData(book, chapter, verse);
     
-  }, [selectedVerse, lastFocusedVerseId, loadVerseData]);
+  }, [selectedVerse, lastFocusedVerseId, loadVerseData, loading, flowNodes]);
 
   if (loading) {
     return <div className="flex items-center justify-center h-screen">Loading verse connections...</div>
@@ -1331,14 +1290,27 @@ function BibleGraphContent({ selectedVerse }: BibleGraphProps) {
           </div>
         </Panel>
         {activeVerse && (
-          <Panel position="top-right" className="bg-white p-4 rounded-lg shadow-lg">
+          <Panel position="top-right" className="bg-white p-4 rounded-lg shadow-lg max-h-[80vh] overflow-y-auto" style={{ width: '350px' }}>
             <div className="space-y-4 flex flex-col h-full">
               <div>
                 <h3 className="text-lg font-medium text-gray-900">
                   {activeVerse.book} {activeVerse.chapter}:{activeVerse.verse}
                 </h3>
                 <p className="mt-1 text-sm text-gray-500">{activeVerse.text}</p>
+                <div className="mt-2">
+                  <a 
+                    href={`/verse/${encodeURIComponent(activeVerse.book)}/${activeVerse.chapter}/${activeVerse.verse}`}
+                    className="text-sm text-blue-600 hover:underline"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    View verse page
+                  </a>
+                </div>
               </div>
+              
+              <VerseKnowledgeCards verse={activeVerse} />
+              
               <div className="flex justify-end items-center gap-2 mt-auto">
                 {selectedNodeForExpansion && (
                   <button

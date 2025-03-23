@@ -4,9 +4,12 @@
     "description": "Interactive visualization of Bible cross-references"
   },
   "home": {
-    "title": "Bible Knowledge Graph"
+    "title": "Bible Graph"
   },
   "navigation": {
+    "home": "Home",
+    "bibleGraph": "Bible Graph",
+    "myNotes": "My Notes",
     "selectBook": "Select Book",
     "selectChapter": "Select Chapter",
     "selectVerse": "Select Verse",
@@ -41,5 +44,38 @@
     "chapter": "Chapter",
     "verse": "Verse",
     "add": "Add to Graph"
+  },
+  "auth": {
+    "login": "Login",
+    "loginTitle": "Login to Bible Graph",
+    "loggingIn": "Logging in...",
+    "register": "Register",
+    "registerTitle": "Create an Account",
+    "registering": "Registering...",
+    "createAccount": "Create an Account",
+    "username": "Username",
+    "usernamePlaceholder": "Enter your username",
+    "password": "Password",
+    "passwordPlaceholder": "Enter your password",
+    "email": "Email",
+    "emailPlaceholder": "Enter your email address",
+    "fullName": "Full Name",
+    "optional": "optional",
+    "confirmPassword": "Confirm Password",
+    "confirmPasswordPlaceholder": "Confirm your password",
+    "passwordRequirements": "Password must be at least 8 characters long",
+    "logout": "Logout",
+    "noAccount": "Don't have an account?",
+    "registerHere": "Register here",
+    "alreadyHaveAccount": "Already have an account?",
+    "loginHere": "Login here",
+    "errors": {
+      "errorOccurred": "An error occurred",
+      "invalidCredentials": "Invalid email or password",
+      "loginFailed": "Login failed. Please try again.",
+      "passwordMismatch": "Passwords do not match",
+      "passwordTooShort": "Password must be at least 8 characters long",
+      "registrationFailed": "Registration failed. Please try again."
+    }
   }
 } 

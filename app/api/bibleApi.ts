@@ -5,8 +5,26 @@
  * It handles API URL construction, HTTP requests, error handling, and response parsing.
  */
 
+import axios, { AxiosRequestConfig, AxiosError, InternalAxiosRequestConfig } from 'axios';
+
 // Base API URL - can be configured based on environment
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+
+// Helper function to ensure API URLs don't include locale prefix
+const removeLocaleFromPath = (url: string): string => {
+  // Don't process absolute URLs that include API_BASE_URL
+  if (url.startsWith(API_BASE_URL)) {
+    return url;
+  }
+  
+  // Handle relative URLs by removing locale prefix if present
+  const localeRegex = /^\/(en|zh)(\/.*)$/;
+  const match = url.match(localeRegex);
+  if (match) {
+    return match[2]; // Return the path without the locale
+  }
+  return url;
+};
 
 // Types
 export interface VerseData {
@@ -31,6 +49,66 @@ export interface CrossReferenceData {
   target_chapter: number;
   target_verse: number;
   target_text?: string;
+}
+
+export interface User {
+  id: string;
+  username: string;
+  email: string;
+  full_name?: string;
+}
+
+export interface UserRegisterData {
+  username: string;
+  email: string;
+  password: string;
+  full_name?: string;
+}
+
+export interface UserLoginData {
+  username: string;
+  password: string;
+}
+
+export interface TokenData {
+  access_token: string;
+  token_type: string;
+}
+
+export interface KnowledgeCard {
+  id: string;
+  title: string;
+  content: string;
+  tags: string[];
+  type: string;
+  created_at: string;
+  updated_at: string;
+  user_id: string;
+  verse_reference: {
+    book: string;
+    chapter: number;
+    verse: number;
+  };
+}
+
+export interface KnowledgeCardCreate {
+  title: string;
+  content: string;
+  tags?: string[];
+  type?: string;
+  verse_reference: {
+    book: string;
+    chapter: number;
+    verse: number;
+    text?: string;
+  };
+}
+
+export interface KnowledgeCardUpdate {
+  title?: string;
+  content?: string;
+  tags?: string[];
+  type?: string;
 }
 
 /**
@@ -72,7 +150,48 @@ const ENDPOINTS = {
    */
   CROSS_REFERENCES: (book: string, chapter: number, verse: number) => 
     `${API_BASE_URL}/cross-references/${book}/${chapter}/${verse}`,
+    
+  /**
+   * Authentication endpoints
+   */
+  REGISTER: `${API_BASE_URL}/register`,
+  LOGIN: `${API_BASE_URL}/token`,
+  CURRENT_USER: `${API_BASE_URL}/users/me`,
+  
+  /**
+   * Knowledge card endpoints
+   */
+  KNOWLEDGE_CARDS: `${API_BASE_URL}/knowledge-cards`,
+  KNOWLEDGE_CARD: (id: string) => `${API_BASE_URL}/knowledge-cards/${id}`,
+  VERSE_KNOWLEDGE_CARDS: (book: string, chapter: number, verse: number) => 
+    `${API_BASE_URL}/verses/${book}/${chapter}/${verse}/knowledge-cards`,
 };
+
+// Axios instance with authentication
+const apiClient = axios.create({
+  baseURL: API_BASE_URL,
+  headers: {
+    'Content-Type': 'application/json',
+  },
+});
+
+// Add auth token interceptor
+apiClient.interceptors.request.use(
+  (config: InternalAxiosRequestConfig) => {
+    const token = localStorage.getItem('bibleGraph_token');
+    if (token && config.headers) {
+      config.headers.Authorization = `Bearer ${token}`;
+    }
+    
+    // Ensure URL doesn't have locale prefix
+    if (config.url) {
+      config.url = removeLocaleFromPath(config.url);
+    }
+    
+    return config;
+  },
+  (error: AxiosError) => Promise.reject(error)
+);
 
 /**
  * Bible API Service
@@ -92,11 +211,8 @@ export const bibleApi = {
    */
   async getVerse(book: string, chapter: number, verse: number): Promise<VerseData> {
     try {
-      const response = await fetch(ENDPOINTS.VERSE(book, chapter, verse));
-      if (!response.ok) {
-        throw new Error(`Failed to fetch verse: ${response.status}`);
-      }
-      return await response.json();
+      const response = await apiClient.get<VerseData>(ENDPOINTS.VERSE(book, chapter, verse));
+      return response.data;
     } catch (error) {
       console.error('Error fetching verse:', error);
       throw error;
@@ -111,11 +227,8 @@ export const bibleApi = {
    */
   async getGraphData(): Promise<GraphData[]> {
     try {
-      const response = await fetch(ENDPOINTS.GRAPH_DATA);
-      if (!response.ok) {
-        throw new Error(`Failed to fetch graph data: ${response.status}`);
-      }
-      return await response.json();
+      const response = await apiClient.get<GraphData[]>(ENDPOINTS.GRAPH_DATA);
+      return response.data;
     } catch (error) {
       console.error('Error fetching graph data:', error);
       throw error;
@@ -135,11 +248,8 @@ export const bibleApi = {
   async getFilteredGraphData(book?: string, chapter?: number, verse?: number, limit: number = 100): Promise<GraphData[]> {
     try {
       const url = ENDPOINTS.GRAPH_DATA_WITH_PARAMS(book, chapter, verse, limit);
-      const response = await fetch(url);
-      if (!response.ok) {
-        throw new Error(`Failed to fetch filtered graph data: ${response.status}`);
-      }
-      return await response.json();
+      const response = await apiClient.get<GraphData[]>(url);
+      return response.data;
     } catch (error) {
       console.error('Error fetching filtered graph data:', error);
       throw error;
@@ -157,14 +267,145 @@ export const bibleApi = {
    */
   async getCrossReferences(book: string, chapter: number, verse: number): Promise<CrossReferenceData[]> {
     try {
-      const response = await fetch(ENDPOINTS.CROSS_REFERENCES(book, chapter, verse));
-      if (!response.ok) {
-        throw new Error(`Failed to fetch cross-references: ${response.status}`);
-      }
-      return await response.json();
+      const response = await apiClient.get<CrossReferenceData[]>(ENDPOINTS.CROSS_REFERENCES(book, chapter, verse));
+      return response.data;
     } catch (error) {
       console.error('Error fetching cross-references:', error);
       throw error;
     }
+  },
+
+  // Authentication methods
+  async register(userData: UserRegisterData): Promise<User> {
+    try {
+      const response = await apiClient.post<User>(ENDPOINTS.REGISTER, userData);
+      return response.data;
+    } catch (error) {
+      console.error('Error registering user:', error);
+      throw error;
+    }
+  },
+
+  async login(loginData: UserLoginData): Promise<TokenData> {
+    try {
+      // Create FormData for authentication
+      // OAuth2PasswordRequestForm expects x-www-form-urlencoded format
+      const formData = new URLSearchParams();
+      formData.append('username', loginData.username);
+      formData.append('password', loginData.password);
+      
+      const response = await apiClient.post<TokenData>(
+        ENDPOINTS.LOGIN, 
+        formData.toString(),
+        {
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+          },
+        }
+      );
+      
+      // Store the token in localStorage
+      localStorage.setItem('bibleGraph_token', response.data.access_token);
+      
+      return response.data;
+    } catch (error: any) {
+      console.error('Error logging in:', error);
+      // Extract error message from response if available
+      if (error.response?.data?.detail) {
+        // Convert to string if it's an object
+        const detail = typeof error.response.data.detail === 'object' 
+          ? JSON.stringify(error.response.data.detail) 
+          : error.response.data.detail;
+        throw new Error(detail);
+      }
+      // Default error message
+      throw new Error('Failed to login. Please check your credentials and try again.');
+    }
+  },
+
+  async getCurrentUser(): Promise<User | null> {
+    try {
+      const response = await apiClient.get<User>(ENDPOINTS.CURRENT_USER);
+      return response.data;
+    } catch (error) {
+      console.error('Failed to get current user:', error);
+      return null;
+    }
+  },
+
+  logout(): void {
+    localStorage.removeItem('bibleGraph_token');
+  },
+
+  // Knowledge Card methods
+  async createKnowledgeCard(cardData: KnowledgeCardCreate): Promise<KnowledgeCard> {
+    try {
+      const response = await apiClient.post<KnowledgeCard>(ENDPOINTS.KNOWLEDGE_CARDS, cardData);
+      return response.data;
+    } catch (error) {
+      console.error('Error creating knowledge card:', error);
+      throw error;
+    }
+  },
+
+  async getKnowledgeCards(filters?: {
+    book?: string;
+    chapter?: number;
+    verse?: number;
+    type?: string;
+  }): Promise<KnowledgeCard[]> {
+    try {
+      const response = await apiClient.get<KnowledgeCard[]>(ENDPOINTS.KNOWLEDGE_CARDS, {
+        params: filters,
+      });
+      return response.data;
+    } catch (error) {
+      console.error('Error fetching knowledge cards:', error);
+      throw error;
+    }
+  },
+
+  async getKnowledgeCard(cardId: string): Promise<KnowledgeCard> {
+    try {
+      const response = await apiClient.get<KnowledgeCard>(ENDPOINTS.KNOWLEDGE_CARD(cardId));
+      return response.data;
+    } catch (error) {
+      console.error('Error fetching knowledge card:', error);
+      throw error;
+    }
+  },
+
+  async updateKnowledgeCard(cardId: string, cardData: KnowledgeCardUpdate): Promise<KnowledgeCard> {
+    try {
+      const response = await apiClient.put<KnowledgeCard>(ENDPOINTS.KNOWLEDGE_CARD(cardId), cardData);
+      return response.data;
+    } catch (error) {
+      console.error('Error updating knowledge card:', error);
+      throw error;
+    }
+  },
+
+  async deleteKnowledgeCard(cardId: string): Promise<void> {
+    try {
+      await apiClient.delete(ENDPOINTS.KNOWLEDGE_CARD(cardId));
+    } catch (error) {
+      console.error('Error deleting knowledge card:', error);
+      throw error;
+    }
+  },
+
+  async getVerseKnowledgeCards(book: string, chapter: number, verse: number): Promise<KnowledgeCard[]> {
+    try {
+      const response = await apiClient.get<KnowledgeCard[]>(ENDPOINTS.VERSE_KNOWLEDGE_CARDS(book, chapter, verse));
+      return response.data;
+    } catch (error) {
+      console.error('Error fetching verse knowledge cards:', error);
+      throw error;
+    }
+  },
+
+  // Check if user is authenticated
+  isAuthenticated(): boolean {
+    return !!localStorage.getItem('bibleGraph_token');
   }
 }; 

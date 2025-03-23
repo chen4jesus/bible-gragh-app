@@ -1,22 +1,25 @@
 {
   "app": {
     "title": "圣经图谱",
-    "description": "圣经交叉引用的交互式可视化"
+    "description": "圣经交叉引用的互动可视化"
   },
   "home": {
-    "title": "圣经知识图谱"
+    "title": "圣经图谱"
   },
   "navigation": {
+    "home": "首页",
+    "bibleGraph": "圣经图谱",
+    "myNotes": "我的笔记",
     "selectBook": "选择书卷",
     "selectChapter": "选择章节",
     "selectVerse": "选择经文",
-    "search": "搜索经节",
+    "search": "搜索经文",
     "allBooks": "所有书卷"
   },
   "graph": {
     "loading": "加载中...",
     "noData": "暂无数据",
-    "fitView": "适配视图",
+    "fitView": "适应视图",
     "resetView": "关闭视图",
     "zoomLevel": "缩放: {level}%",
     "overview": "圣经地图概览",
@@ -33,13 +36,46 @@
   "historyPanel": {
     "title": "历史记录",
     "clearAll": "清除全部",
-    "noHistory": "暂无历史记录"
+    "noHistory": "无历史记录"
   },
   "addNodePanel": {
     "title": "添加经文",
     "book": "书卷",
-    "chapter": "章节",
-    "verse": "经文",
-    "add": "添加到图谱"
+    "chapter": "章",
+    "verse": "节",
+    "add": "添加到图表"
+  },
+  "auth": {
+    "login": "登录",
+    "loginTitle": "登录圣经图谱",
+    "loggingIn": "登录中...",
+    "register": "注册",
+    "registerTitle": "创建账户",
+    "registering": "注册中...",
+    "createAccount": "创建账户",
+    "username": "用户名",
+    "usernamePlaceholder": "请输入用户名",
+    "password": "密码",
+    "passwordPlaceholder": "请输入密码",
+    "email": "邮箱",
+    "emailPlaceholder": "请输入邮箱地址",
+    "fullName": "全名",
+    "optional": "可选",
+    "confirmPassword": "确认密码",
+    "confirmPasswordPlaceholder": "请确认密码",
+    "passwordRequirements": "密码长度至少为8个字符",
+    "logout": "退出登录",
+    "noAccount": "还没有账户？",
+    "registerHere": "在此注册",
+    "alreadyHaveAccount": "已经有账户？",
+    "loginHere": "在此登录",
+    "errors": {
+      "errorOccurred": "发生错误",
+      "invalidCredentials": "邮箱或密码无效",
+      "loginFailed": "登录失败，请重试。",
+      "passwordMismatch": "两次输入的密码不匹配",
+      "passwordTooShort": "密码长度至少为8个字符",
+      "registrationFailed": "注册失败，请重试。"
+    }
   }
 } 
