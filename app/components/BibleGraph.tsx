@@ -181,6 +181,9 @@ function BibleGraphContent({ selectedVerse }: BibleGraphProps) {
   // Add state to track if we had NaN errors
   const [hasFixedNaN, setHasFixedNaN] = useState(false)
   
+  // Add a new state to track currently selected node for expansion
+  const [selectedNodeForExpansion, setSelectedNodeForExpansion] = useState<BibleNode | null>(null);
+
   // Add keyboard event handlers for shift key
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -369,6 +372,9 @@ function BibleGraphContent({ selectedVerse }: BibleGraphProps) {
       // Set user has navigated to true when clicking on a node
       setUserHasNavigated(true);
       
+      // Store the selected node for expansion option
+      setSelectedNodeForExpansion(node as BibleNode);
+      
       const response = await fetch(
         `http://localhost:8000/verses/${book}/${chapter}/${verse}`
       )
@@ -432,57 +438,59 @@ function BibleGraphContent({ selectedVerse }: BibleGraphProps) {
     return positions
   }, [])
 
-  // Update double click handler
-  const onNodeDoubleClick = useCallback(async (event: React.MouseEvent, clickedNode: Node<BibleNodeData>) => {
-    try {
-      const { book, chapter, verse } = clickedNode.data
-      const nodeId = `${book}-${chapter}-${verse}`
-      
-      // Focus immediately on the clicked node with a zoom animation
-      if (reactFlowInstance) {
-        reactFlowInstance.setCenter(
-          clickedNode.position.x, 
-          clickedNode.position.y, 
-          { duration: 400, zoom: 1.2 }
-        );
-      }
-      
-      // Toggle expanded state
-      const expandedNodesArray = Array.from(expandedNodes)
-      if (expandedNodes.has(nodeId)) {
-        const newExpandedNodes = new Set(expandedNodesArray.filter(id => id !== nodeId))
-        setExpandedNodes(newExpandedNodes)
-        return
-      }
+  // Add a manual expand function using the stored node
+  const expandSelectedNode = useCallback(() => {
+    if (!selectedNodeForExpansion) return;
+    
+    // This will use the same logic as the previous onNodeDoubleClick handler
+    // but triggered manually through a button
+    const { book, chapter, verse } = selectedNodeForExpansion.data;
+    const nodeId = `${book}-${chapter}-${verse}`;
+    
+    // Focus immediately on the clicked node with a zoom animation
+    if (reactFlowInstance) {
+      reactFlowInstance.setCenter(
+        selectedNodeForExpansion.position.x, 
+        selectedNodeForExpansion.position.y, 
+        { duration: 400, zoom: 1.2 }
+      );
+    }
+    
+    // Toggle expanded state
+    const expandedNodesArray = Array.from(expandedNodes);
+    if (expandedNodes.has(nodeId)) {
+      const newExpandedNodes = new Set(expandedNodesArray.filter(id => id !== nodeId));
+      setExpandedNodes(newExpandedNodes);
+      return;
+    }
 
-      // Show loading indicator for this specific node
-      setLoadingVerses(prev => new Set(prev).add(nodeId));
-      
-      try {
-        // Fetch related verses from the API
-        const response = await fetch(
-          `http://localhost:8000/cross-references/${book}/${chapter}/${verse}`
-        )
+    // Show loading indicator for this specific node
+    setLoadingVerses(prev => new Set(prev).add(nodeId));
+    
+    // Fetch related verses from the API
+    fetch(`http://localhost:8000/cross-references/${book}/${chapter}/${verse}`)
+      .then(response => {
         if (!response.ok) {
-          throw new Error('Failed to fetch verse cross-references')
+          throw new Error('Failed to fetch verse cross-references');
         }
-        
-        const relationships: GraphData[] = await response.json()
-        console.log(`Received ${relationships.length} relationships for ${nodeId}`)
+        return response.json();
+      })
+      .then((relationships: GraphData[]) => {
+        console.log(`Received ${relationships.length} relationships for ${nodeId}`);
 
         // Calculate optimal positions for new nodes
-        const positions = calculateOptimalLayout(clickedNode, relationships.length, flowNodes)
+        const positions = calculateOptimalLayout(selectedNodeForExpansion, relationships.length, flowNodes);
 
         // Create new nodes and edges
-        const newNodes: BibleNode[] = []
-        const newEdges: Edge[] = []
-        const existingNodeIds = new Set(flowNodes.map(n => n.id))
+        const newNodes: BibleNode[] = [];
+        const newEdges: Edge[] = [];
+        const existingNodeIds = new Set(flowNodes.map(n => n.id));
 
         relationships.forEach((rel, index) => {
-          const targetId = `${rel.target_book}-${rel.target_chapter}-${rel.target_verse}`
+          const targetId = `${rel.target_book}-${rel.target_chapter}-${rel.target_verse}`;
           
           // Only add new nodes if they don't exist
-          if (!existingNodeIds.has(targetId)) {
+          if (!existingNodeIds.has(targetId) && !newNodes.some(n => n.id === targetId)) {
             const newNode: BibleNode = {
               id: targetId,
               type: 'default',
@@ -499,12 +507,12 @@ function BibleGraphContent({ selectedVerse }: BibleGraphProps) {
                 ...nodeStyle,
                 background: getNodeColor(rel.target_book),
               },
-            }
-            newNodes.push(newNode)
+            };
+            newNodes.push(newNode);
           }
 
           // Add edge with enhanced styling for expanded connections
-          const edgeId = createUniqueEdgeId(nodeId, targetId)
+          const edgeId = createUniqueEdgeId(nodeId, targetId);
           if (!flowEdges.some(e => e.id === edgeId) && !newEdges.some(e => e.id === edgeId)) {
             newEdges.push({
               id: edgeId,
@@ -537,25 +545,24 @@ function BibleGraphContent({ selectedVerse }: BibleGraphProps) {
                 fillOpacity: 0.8,
                 borderRadius: 4
               }
-            })
+            });
           }
-        })
+        });
 
         // Update state
-        setFlowNodes(nodes => [...nodes, ...newNodes])
-        setFlowEdges(edges => [...edges, ...newEdges])
-        setExpandedNodes(new Set([...expandedNodesArray, nodeId]))
+        setFlowNodes(nodes => [...nodes, ...newNodes]);
+        setFlowEdges(edges => [...edges, ...newEdges]);
+        setExpandedNodes(new Set([...expandedNodesArray, nodeId]));
 
         // After loading is complete, zoom out slightly to show surrounding nodes
-        // This happens with a delay to ensure the user first sees the focus on the clicked node
         if (reactFlowInstance && newNodes.length > 0) {
           setTimeout(() => {
             // Calculate the appropriate zoom level based on the number of new nodes
             const zoomLevel = Math.max(0.8, 1.2 - (newNodes.length * 0.02));
             
             reactFlowInstance.setCenter(
-              clickedNode.position.x, 
-              clickedNode.position.y, 
+              selectedNodeForExpansion.position.x, 
+              selectedNodeForExpansion.position.y, 
               { 
                 duration: 800, 
                 zoom: zoomLevel 
@@ -563,19 +570,20 @@ function BibleGraphContent({ selectedVerse }: BibleGraphProps) {
             );
           }, 600);
         }
-      } finally {
+      })
+      .catch(err => {
+        console.error('Error handling node expansion:', err);
+        setError('Failed to load verse relationships');
+      })
+      .finally(() => {
         // Remove loading indicator
         setLoadingVerses(prev => {
           const next = new Set(prev);
           next.delete(nodeId);
           return next;
         });
-      }
-    } catch (err) {
-      console.error('Error handling node double click:', err)
-      setError('Failed to load verse relationships')
-    }
-  }, [expandedNodes, flowNodes, reactFlowInstance, calculateOptimalLayout, expandedEdgeStyle, setLoadingVerses])
+      });
+  }, [selectedNodeForExpansion, expandedNodes, flowNodes, flowEdges, reactFlowInstance, calculateOptimalLayout, expandedEdgeStyle, setLoadingVerses]);
 
   // Add event handler for edge mouse enter/leave to show edge data
   const onEdgeMouseEnter = useCallback((event: React.MouseEvent, edge: Edge) => {
@@ -822,7 +830,7 @@ function BibleGraphContent({ selectedVerse }: BibleGraphProps) {
     // Prevent duplicate loading
     if (loadingVerses.has(verseId) || loadedPagesRef.current.has(pageKey)) {
       console.log('Skipping load - already loading or loaded:', pageKey)
-      return
+      return false
     }
 
     try {
@@ -840,13 +848,16 @@ function BibleGraphContent({ selectedVerse }: BibleGraphProps) {
       if (data.length === 0) {
         console.log('No additional relationships found')
         loadedPagesRef.current.add(pageKey) // Mark this page as loaded even if empty
-        return
+        return false
       }
 
       // Create new nodes and edges from the data
       const newNodes: BibleNode[] = []
       const newEdges: Edge[] = []
       const existingNodeIds = new Set(flowNodes.map(n => n.id))
+      
+      // Track if we found the specific verse we're looking for
+      let foundTargetVerse = false
 
       data.forEach((item) => {
         // Process source nodes
@@ -876,6 +887,11 @@ function BibleGraphContent({ selectedVerse }: BibleGraphProps) {
           }
           newNodes.push(node)
           existingNodeIds.add(sourceNodeId)
+          
+          // Check if this is the verse we're looking for
+          if (sourceNodeId === verseId) {
+            foundTargetVerse = true
+          }
         }
 
         // Process target nodes
@@ -905,6 +921,11 @@ function BibleGraphContent({ selectedVerse }: BibleGraphProps) {
           }
           newNodes.push(node)
           existingNodeIds.add(targetNodeId)
+          
+          // Check if this is the verse we're looking for
+          if (targetNodeId === verseId) {
+            foundTargetVerse = true
+          }
         }
 
         // Create edge if it doesn't exist
@@ -919,45 +940,92 @@ function BibleGraphContent({ selectedVerse }: BibleGraphProps) {
         }
       })
 
+      // If we didn't find the target verse but we're specifically looking for it,
+      // try adding it as a standalone node
+      if (!foundTargetVerse && verseId.includes(`${book}-${chapter}-${verse}`)) {
+        const baseX = (chapter * 250) % 2000
+        const baseY = Math.floor(chapter / 8) * 200
+        
+        const standaloneNode: BibleNode = {
+          id: verseId,
+          type: 'default',
+          position: { 
+            x: baseX + (verse * 50),
+            y: baseY + (verse * 30)
+          },
+          data: {
+            label: `${book} ${chapter}:${verse}`,
+            book: book,
+            chapter: chapter,
+            verse: verse,
+          },
+          sourcePosition: Position.Right,
+          targetPosition: Position.Left,
+          style: {
+            ...nodeStyle,
+            background: getNodeColor(book),
+            // Add a distinct style for standalone nodes
+            borderStyle: 'dashed',
+            borderColor: theme.colors.primary[500],
+          },
+        }
+        
+        newNodes.push(standaloneNode)
+        foundTargetVerse = true
+        console.log(`Added standalone node for target verse: ${verseId}`);
+      }
+
       // Batch update state
       if (newNodes.length > 0 || newEdges.length > 0) {
-        setFlowNodes(nodes => [...nodes, ...newNodes])
-        setFlowEdges(edges => [...edges, ...newEdges])
-        
-        // Update books list with new unique books
-        const newBooks = Array.from(
-          new Set([
-            ...books,
-            ...data.map(item => item.source_book),
-            ...data.map(item => item.target_book),
-          ])
-        ).sort()
-        setBooks(newBooks)
+        // Use a promise to ensure state updates complete before returning
+        await new Promise<void>(resolve => {
+          setFlowNodes(nodes => {
+            const updatedNodes = [...nodes, ...newNodes];
+            setTimeout(() => resolve(), 0); // Use setTimeout to ensure state updates
+            return updatedNodes;
+          });
+          
+          setFlowEdges(edges => [...edges, ...newEdges]);
+          
+          // Update books list with new unique books
+          const newBooks = Array.from(
+            new Set([
+              ...books,
+              ...data.map(item => item.source_book),
+              ...data.map(item => item.target_book),
+            ])
+          ).sort();
+          setBooks(newBooks);
+        });
 
-        console.log(`Added ${newNodes.length} nodes and ${newEdges.length} edges for ${pageKey}`)
+        console.log(`Added ${newNodes.length} nodes and ${newEdges.length} edges for ${pageKey}`);
       }
 
       // Mark this page as loaded
-      loadedPagesRef.current.add(pageKey)
+      loadedPagesRef.current.add(pageKey);
+      
+      // Return whether we found the target verse
+      return foundTargetVerse;
 
     } catch (error) {
-      console.error('Error fetching additional graph data:', error)
-      setError(error instanceof Error ? error.message : 'An error occurred')
+      console.error('Error fetching additional graph data:', error);
+      setError(error instanceof Error ? error.message : 'An error occurred');
+      return false;
     } finally {
       setLoadingVerses(prev => {
-        const next = new Set(prev)
-        next.delete(verseId)
-        return next
-      })
+        const next = new Set(prev);
+        next.delete(verseId);
+        return next;
+      });
     }
-  }, [flowNodes, flowEdges, books, loadingVerses, getNodeColor])
+  }, [flowNodes, flowEdges, books, loadingVerses, getNodeColor]);
 
   // Track when user manually navigates the graph
   const handleViewportChange = useCallback(() => {
     setUserHasNavigated(true);
   }, []);
 
-  // Separate function to apply highlighting animation to a node - define this first
+  // Separate function to apply highlighting animation to a node
   const applyNodeHighlight = useCallback((nodeId: string) => {
     // First phase - apply highlight effect
     setFlowNodes(nodes => 
@@ -1000,7 +1068,7 @@ function BibleGraphContent({ selectedVerse }: BibleGraphProps) {
     }, 1000);
   }, [setFlowNodes]);
 
-  // Add a new function to handle focusing on a verse node - now applyNodeHighlight is defined before this
+  // Add a new function to handle focusing on a verse node
   const focusOnSelectedVerse = useCallback((verseId: string) => {
     // Find the node corresponding to the verse
     const node = flowNodes.find(n => n.id === verseId);
@@ -1020,41 +1088,133 @@ function BibleGraphContent({ selectedVerse }: BibleGraphProps) {
       setLastFocusedVerseId(verseId);
       
       console.log(`Focused on verse: ${verseId}`);
+      return true;
     } else if (!node) {
       console.log(`Could not find node for verse: ${verseId}`);
+      return false;
     }
+    return false;
   }, [flowNodes, reactFlowInstance, lastFocusedVerseId, setLastFocusedVerseId]);
 
-  // Update the dependency array in the useEffect to include the new focusOnSelectedVerse function
-  useEffect(() => {
-    if (!selectedVerse || !isInitialized) return
+  // Implement a more robust verse loading system that handles retries
+  const loadVerseWithRetries = useCallback(async (book: string, chapter: number, verse: number, maxRetries = 2) => {
+    const verseId = `${book}-${chapter}-${verse}`;
+    console.log(`Attempting to load verse: ${verseId}`);
+    
+    // First check if the verse already exists
+    if (verseExistsInGraph(book, chapter, verse)) {
+      return focusOnSelectedVerse(verseId);
+    }
+    
+    // If not, try to load it with retries
+    let retries = 0;
+    let success = false;
+    
+    while (retries < maxRetries && !success) {
+      // Try broader searches if we're retrying
+      const searchBook = book;
+      const searchChapter = chapter;
+      const searchVerse = retries === 0 ? verse : 1; // On retry, search for the whole chapter
+      
+      console.log(`Loading attempt ${retries + 1} for ${searchBook}-${searchChapter}-${searchVerse}`);
+      
+      // Load the data - if we found our target verse, mark as success
+      const found = await loadAdditionalData(searchBook, searchChapter, searchVerse);
+      
+      if (found) {
+        // Try to focus on it now
+        success = focusOnSelectedVerse(verseId);
+        if (success) break;
+      }
+      
+      // Slight delay before retry to allow React to update state
+      await new Promise(resolve => setTimeout(resolve, 100));
+      retries++;
+    }
+    
+    // Try once more to focus in case the node was added but not yet available when we checked
+    if (!success && verseExistsInGraph(book, chapter, verse)) {
+      success = focusOnSelectedVerse(verseId);
+    }
+    
+    // Make a direct API call for the specific verse if all else fails
+    if (!success) {
+      try {
+        console.log(`Making direct verse API call for ${verseId}`);
+        const response = await fetch(
+          `http://localhost:8000/verses/${book}/${chapter}/${verse}`
+        );
+        
+        if (response.ok) {
+          const data = await response.json();
+          
+          // If we got data but still no node, create one manually
+          if (!verseExistsInGraph(book, chapter, verse)) {
+            const baseX = (chapter * 250) % 2000;
+            const baseY = Math.floor(chapter / 8) * 200;
+            
+            const standaloneNode: BibleNode = {
+              id: verseId,
+              type: 'default',
+              position: { 
+                x: baseX + (verse * 50),
+                y: baseY + (verse * 30)
+              },
+              data: {
+                label: `${book} ${chapter}:${verse}`,
+                book: book,
+                chapter: chapter,
+                verse: verse,
+              },
+              sourcePosition: Position.Right,
+              targetPosition: Position.Left,
+              style: {
+                ...nodeStyle,
+                background: getNodeColor(book),
+                borderWidth: 2,
+                borderStyle: 'dashed',
+                borderColor: theme.colors.primary[500],
+              },
+            };
+            
+            // Add the node to the graph
+            setFlowNodes(nodes => [...nodes, standaloneNode]);
+            console.log(`Manually added standalone node for: ${verseId}`);
+            
+            // Wait a bit for state update
+            await new Promise(resolve => setTimeout(resolve, 100));
+            
+            // Try to focus again
+            success = focusOnSelectedVerse(verseId);
+          }
+        }
+      } catch (err) {
+        console.error(`Failed to make direct verse API call for ${verseId}:`, err);
+      }
+    }
+    
+    return success;
+  }, [verseExistsInGraph, loadAdditionalData, focusOnSelectedVerse, getNodeColor]);
 
-    const { book, chapter, verse } = selectedVerse
-    const verseId = `${book}-${chapter}-${verse}`
+  // Update the useEffect to use our new more robust loading system
+  useEffect(() => {
+    if (!selectedVerse || !isInitialized) return;
+
+    const { book, chapter, verse } = selectedVerse;
+    const verseId = `${book}-${chapter}-${verse}`;
     
     // Prevent repeat focusing on the same verse
     if (verseId === lastFocusedVerseId) {
       return;
     }
     
-    // Check if the verse exists in current data
-    if (!verseExistsInGraph(book, chapter, verse) && !loadingVerses.has(verseId)) {
-      // Load additional data if verse not found and not currently loading
-      loadAdditionalData(book, chapter, verse).then(() => {
-        // Only focus if we haven't already focused on a different verse
-        const currentSelectedVerseId = selectedVerse ? 
-          `${selectedVerse.book}-${selectedVerse.chapter}-${selectedVerse.verse}` : null;
-          
-        if (currentSelectedVerseId === verseId && verseId !== lastFocusedVerseId) {
-          focusOnSelectedVerse(verseId);
-        }
-      });
-    } else if (verseId !== lastFocusedVerseId) {
-      // If the verse already exists and we haven't focused on it yet, focus on it immediately
-      focusOnSelectedVerse(verseId);
-    }
-  }, [selectedVerse, isInitialized, verseExistsInGraph, loadAdditionalData, 
-      loadingVerses, focusOnSelectedVerse, lastFocusedVerseId]);
+    // Reset user navigation when verse is selected externally
+    setUserHasNavigated(false);
+    
+    // Use our new robust loading system
+    loadVerseWithRetries(book, chapter, verse);
+    
+  }, [selectedVerse, isInitialized, lastFocusedVerseId, loadVerseWithRetries]);
 
   if (loading) {
     return <div className="flex items-center justify-center h-screen">Loading graph data...</div>
@@ -1072,7 +1232,6 @@ function BibleGraphContent({ selectedVerse }: BibleGraphProps) {
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
         onNodeClick={onNodeClick}
-        onNodeDoubleClick={onNodeDoubleClick}
         onEdgeMouseEnter={onEdgeMouseEnter}
         onEdgeMouseLeave={onEdgeMouseLeave}
         defaultEdgeOptions={defaultEdgeOptions}
@@ -1155,8 +1314,21 @@ function BibleGraphContent({ selectedVerse }: BibleGraphProps) {
                 </h3>
                 <p className="mt-1 text-sm text-gray-500">{activeVerse.text}</p>
               </div>
+              {selectedNodeForExpansion && (
+                <button
+                  onClick={expandSelectedNode}
+                  className="mt-2 px-3 py-2 text-sm bg-indigo-600 text-white rounded-md hover:bg-indigo-700 transition-colors"
+                >
+                  {expandedNodes.has(`${selectedNodeForExpansion.data.book}-${selectedNodeForExpansion.data.chapter}-${selectedNodeForExpansion.data.verse}`) 
+                    ? 'Collapse Node Connections' 
+                    : 'Expand Node Connections'}
+                </button>
+              )}
               <button
-                onClick={() => setActiveVerse(null)}
+                onClick={() => {
+                  setActiveVerse(null);
+                  setSelectedNodeForExpansion(null);
+                }}
                 className="text-sm text-gray-500 hover:text-gray-700"
               >
                 Close
@@ -1164,6 +1336,13 @@ function BibleGraphContent({ selectedVerse }: BibleGraphProps) {
             </div>
           </Panel>
         )}
+        {/* Add information panel about disabled double-click */}
+        <Panel position="bottom-left" className="bg-white p-3 rounded-lg shadow-lg">
+          <div className="text-sm text-gray-700">
+            <p><strong>Note:</strong> Double-click functionality has been disabled to prevent duplicate loading issues.</p>
+            <p className="text-xs text-gray-500 mt-1">Click on a node and use the "Expand Node Connections" button instead.</p>
+          </div>
+        </Panel>
       </ReactFlow>
     </div>
   )
