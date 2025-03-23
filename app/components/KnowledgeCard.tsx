@@ -4,12 +4,13 @@ import { useState } from 'react';
 import { KnowledgeCard as KnowledgeCardType } from '../api/bibleApi';
 import { useAuth } from '../contexts/AuthContext';
 import { bibleApi } from '../api/bibleApi';
-import { FiEdit2, FiTrash2, FiSave, FiX } from 'react-icons/fi';
+import { FiEdit2, FiTrash2, FiSave, FiX, FiAlertCircle } from 'react-icons/fi';
+import { useTranslations } from 'next-intl';
 
 interface KnowledgeCardProps {
   card: KnowledgeCardType;
-  onDelete?: () => void;
-  onUpdate?: (updatedCard: KnowledgeCardType) => void;
+  onDelete: (cardId: string) => void;
+  onUpdate: (updatedCard: KnowledgeCardType) => void;
 }
 
 export default function KnowledgeCard({ card, onDelete, onUpdate }: KnowledgeCardProps) {
@@ -23,6 +24,8 @@ export default function KnowledgeCard({ card, onDelete, onUpdate }: KnowledgeCar
   });
   const [isDeleting, setIsDeleting] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const t = useTranslations('knowledgeCard');
 
   const isOwner = user?.id === card.user_id;
   
@@ -44,6 +47,7 @@ export default function KnowledgeCard({ card, onDelete, onUpdate }: KnowledgeCar
   const handleUpdate = async () => {
     if (!isOwner) return;
 
+    setError(null);
     setIsSaving(true);
     try {
       const updatedCard = await bibleApi.updateKnowledgeCard(card.id, {
@@ -53,12 +57,11 @@ export default function KnowledgeCard({ card, onDelete, onUpdate }: KnowledgeCar
         type: editData.type as any,
       });
 
-      if (onUpdate) {
-        onUpdate(updatedCard);
-      }
+      onUpdate(updatedCard);
       setIsEditing(false);
-    } catch (error) {
-      console.error('Failed to update knowledge card:', error);
+    } catch (err: any) {
+      console.error('Failed to update knowledge card:', err);
+      setError(err.message || t('errors.updateFailed'));
     } finally {
       setIsSaving(false);
     }
@@ -67,103 +70,127 @@ export default function KnowledgeCard({ card, onDelete, onUpdate }: KnowledgeCar
   const handleDelete = async () => {
     if (!isOwner) return;
 
+    setError(null);
     setIsDeleting(true);
     try {
       await bibleApi.deleteKnowledgeCard(card.id);
-      if (onDelete) {
-        onDelete();
-      }
-    } catch (error) {
-      console.error('Failed to delete knowledge card:', error);
+      onDelete(card.id);
+    } catch (err: any) {
+      console.error('Failed to delete knowledge card:', err);
+      setError(err.message || t('errors.deleteFailed'));
       setIsDeleting(false);
     }
   };
 
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);
-    return date.toLocaleDateString('en-US', {
+    return new Intl.DateTimeFormat(undefined, {
       year: 'numeric',
       month: 'short',
       day: 'numeric',
+    }).format(date);
+  };
+
+  const handleCancel = () => {
+    setEditData({
+      title: card.title,
+      content: card.content,
+      tags: card.tags.join(', '),
+      type: card.type,
     });
+    setError(null);
+    setIsEditing(false);
   };
 
   if (isEditing) {
     return (
-      <div className={`border p-4 rounded-lg mb-4 shadow-sm ${cardTypeColor}`}>
+      <div className={`border p-4 rounded-lg mb-4 shadow-sm ${cardTypeColor}`} aria-label={t('editingCard')}>
+        {error && (
+          <div className="mb-4 p-3 bg-red-50 border border-red-100 rounded-md flex items-start" role="alert">
+            <FiAlertCircle className="text-red-500 mt-0.5 mr-2 flex-shrink-0" />
+            <span className="text-sm text-red-700">{error}</span>
+          </div>
+        )}
+
         <div className="mb-3">
-          <label htmlFor="title" className="block text-sm font-medium text-gray-700 mb-1">
-            Title
+          <label htmlFor={`title-${card.id}`} className="block text-sm font-medium text-gray-700 mb-1">
+            {t('fields.title')}
           </label>
           <input
-            id="title"
+            id={`title-${card.id}`}
             name="title"
             type="text"
             value={editData.title}
             onChange={handleChange}
             className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+            aria-required="true"
           />
         </div>
 
         <div className="mb-3">
-          <label htmlFor="content" className="block text-sm font-medium text-gray-700 mb-1">
-            Content
+          <label htmlFor={`content-${card.id}`} className="block text-sm font-medium text-gray-700 mb-1">
+            {t('fields.content')}
           </label>
           <textarea
-            id="content"
+            id={`content-${card.id}`}
             name="content"
             value={editData.content}
             onChange={handleChange}
             rows={4}
             className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+            aria-required="true"
           />
         </div>
 
         <div className="mb-3">
-          <label htmlFor="type" className="block text-sm font-medium text-gray-700 mb-1">
-            Type
+          <label htmlFor={`type-${card.id}`} className="block text-sm font-medium text-gray-700 mb-1">
+            {t('fields.type')}
           </label>
           <select
-            id="type"
+            id={`type-${card.id}`}
             name="type"
             value={editData.type}
             onChange={handleChange}
             className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
           >
-            <option value="note">Note</option>
-            <option value="commentary">Commentary</option>
-            <option value="reflection">Reflection</option>
-            <option value="question">Question</option>
+            <option value="note">{t('types.note')}</option>
+            <option value="commentary">{t('types.commentary')}</option>
+            <option value="reflection">{t('types.reflection')}</option>
+            <option value="question">{t('types.question')}</option>
           </select>
         </div>
 
         <div className="mb-4">
-          <label htmlFor="tags" className="block text-sm font-medium text-gray-700 mb-1">
-            Tags (comma separated)
+          <label htmlFor={`tags-${card.id}`} className="block text-sm font-medium text-gray-700 mb-1">
+            {t('fields.tags')}
           </label>
           <input
-            id="tags"
+            id={`tags-${card.id}`}
             name="tags"
             type="text"
             value={editData.tags}
             onChange={handleChange}
+            placeholder={t('fields.tagsPlaceholder')}
             className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
           />
         </div>
 
         <div className="flex justify-end space-x-2">
           <button
-            onClick={() => setIsEditing(false)}
+            onClick={handleCancel}
             className="px-3 py-1 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-100 flex items-center"
+            aria-label={t('actions.cancel')}
           >
-            <FiX className="mr-1" /> Cancel
+            <FiX className="mr-1" /> {t('actions.cancel')}
           </button>
           <button
             onClick={handleUpdate}
             disabled={isSaving}
-            className="px-3 py-1 bg-blue-600 text-white rounded-md hover:bg-blue-700 flex items-center"
+            className="px-3 py-1 bg-blue-600 text-white rounded-md hover:bg-blue-700 flex items-center disabled:opacity-70 disabled:cursor-not-allowed"
+            aria-busy={isSaving}
+            aria-label={isSaving ? t('actions.saving') : t('actions.save')}
           >
-            <FiSave className="mr-1" /> {isSaving ? 'Saving...' : 'Save'}
+            <FiSave className="mr-1" /> {isSaving ? t('actions.saving') : t('actions.save')}
           </button>
         </div>
       </div>
@@ -171,7 +198,7 @@ export default function KnowledgeCard({ card, onDelete, onUpdate }: KnowledgeCar
   }
 
   return (
-    <div className={`border p-4 rounded-lg mb-4 shadow-sm ${cardTypeColor}`}>
+    <article className={`border p-4 rounded-lg mb-4 shadow-sm ${cardTypeColor}`}>
       <div className="flex justify-between items-start mb-2">
         <h3 className="text-lg font-medium">{card.title}</h3>
         {isOwner && (
@@ -179,15 +206,16 @@ export default function KnowledgeCard({ card, onDelete, onUpdate }: KnowledgeCar
             <button
               onClick={() => setIsEditing(true)}
               className="p-1 text-gray-600 hover:text-blue-500"
-              aria-label="Edit"
+              aria-label={t('actions.edit')}
             >
               <FiEdit2 size={16} />
             </button>
             <button
               onClick={handleDelete}
               disabled={isDeleting}
-              className="p-1 text-gray-600 hover:text-red-500"
-              aria-label="Delete"
+              className="p-1 text-gray-600 hover:text-red-500 disabled:opacity-50 disabled:cursor-not-allowed"
+              aria-label={t('actions.delete')}
+              aria-busy={isDeleting}
             >
               <FiTrash2 size={16} />
             </button>
@@ -195,23 +223,32 @@ export default function KnowledgeCard({ card, onDelete, onUpdate }: KnowledgeCar
         )}
       </div>
 
+      {error && (
+        <div className="mb-3 p-2 bg-red-50 border border-red-100 rounded-md flex items-start" role="alert">
+          <FiAlertCircle className="text-red-500 mt-0.5 mr-2 flex-shrink-0" />
+          <span className="text-sm text-red-700">{error}</span>
+        </div>
+      )}
+
       <div className="text-gray-700 mb-3 whitespace-pre-line">{card.content}</div>
 
-      <div className="flex flex-wrap gap-1 mb-2">
-        {card.tags.map((tag, index) => (
-          <span
-            key={index}
-            className="inline-block bg-gray-200 rounded-full px-2 py-1 text-xs text-gray-700"
-          >
-            {tag}
-          </span>
-        ))}
-      </div>
+      {card.tags.length > 0 && (
+        <div className="flex flex-wrap gap-1 mb-2">
+          {card.tags.map((tag, index) => (
+            <span
+              key={index}
+              className="inline-block bg-gray-200 rounded-full px-2 py-1 text-xs text-gray-700"
+            >
+              {tag}
+            </span>
+          ))}
+        </div>
+      )}
 
-      <div className="text-xs text-gray-500 flex justify-between">
-        <span className="capitalize">{card.type}</span>
-        <span>Updated: {formatDate(card.updated_at)}</span>
+      <div className="text-xs text-gray-500 flex justify-between mt-2">
+        <span className="capitalize">{t(`types.${card.type}`)}</span>
+        <span>{t('updated')}: {formatDate(card.updated_at)}</span>
       </div>
-    </div>
+    </article>
   );
 } 

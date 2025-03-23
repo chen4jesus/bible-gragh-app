@@ -641,6 +641,7 @@ async def get_graph_data(
     book: Optional[str] = Query(None, description="Filter by book name"),
     chapter: Optional[int] = Query(None, description="Filter by chapter number"),
     verse: Optional[int] = Query(None, description="Filter by verse number"),
+    include_knowledge_cards: bool = Query(False, description="Include knowledge cards in the graph data"),
     limit: Optional[int] = Query(100, description="Limit the number of results")
 ):
     with driver.session() as session:
@@ -674,7 +675,7 @@ async def get_graph_data(
                 print(f"Error creating sample verses: {e}")
                 # Continue without creating sample verses
 
-        # Build the query based on provided parameters
+        # Build the verse relationships query based on provided parameters
         query = """
         MATCH (v1:Verse)-[r:REFERENCES]->(v2:Verse)
         """
@@ -706,14 +707,179 @@ async def get_graph_data(
             v1.verse as source_verse,
             v2.book as target_book, 
             v2.chapter as target_chapter, 
-            v2.verse as target_verse
+            v2.verse as target_verse,
+            'verse_reference' as relationship_type
         LIMIT $limit
         """
         params["limit"] = limit
 
         result = session.run(query, params)
-        data = [dict(record) for record in result]
-        return data
+        verse_connections = [dict(record) for record in result]
+        
+        # If knowledge cards should be included, fetch those connections too
+        if include_knowledge_cards and (verse_connections or book or chapter or verse):
+            kc_query = """
+            MATCH (k:KnowledgeCard)-[:REFERENCES]->(v:Verse)
+            """
+            
+            kc_where_clauses = []
+            kc_params = {}
+            
+            if book:
+                kc_where_clauses.append("v.book = $book")
+                kc_params["book"] = book
+                
+            if chapter:
+                kc_where_clauses.append("v.chapter = $chapter")
+                kc_params["chapter"] = chapter
+                
+            if verse:
+                kc_where_clauses.append("v.verse = $verse")
+                kc_params["verse"] = verse
+            
+            if kc_where_clauses:
+                kc_query += "\nWHERE " + " AND ".join(kc_where_clauses)
+            
+            kc_query += """
+            MATCH (u:User)-[:CREATED]->(k)
+            RETURN 
+                k.id as source_id,
+                k.title as source_title,
+                k.type as source_type,
+                v.book as target_book,
+                v.chapter as target_chapter,
+                v.verse as target_verse,
+                'knowledge_card' as relationship_type,
+                u.username as created_by
+            LIMIT $limit
+            """
+            kc_params["limit"] = limit
+            
+            kc_result = session.run(kc_query, kc_params)
+            kc_connections = [dict(record) for record in kc_result]
+            
+            # Combine both types of connections
+            return {
+                "verse_connections": verse_connections,
+                "knowledge_card_connections": kc_connections
+            }
+            
+        return verse_connections
+
+@app.get("/knowledge-graph")
+async def get_knowledge_graph(
+    book: Optional[str] = Query(None, description="Filter by book name"),
+    chapter: Optional[int] = Query(None, description="Filter by chapter number"),
+    verse: Optional[int] = Query(None, description="Filter by verse number"),
+    depth: int = Query(2, description="Depth of relationships to traverse"),
+    limit: Optional[int] = Query(100, description="Limit the number of results")
+):
+    """
+    Get a knowledge graph that includes verses, knowledge cards, and their relationships.
+    This creates a more comprehensive graph visualization than the basic graph-data endpoint.
+    """
+    with driver.session() as session:
+        # Define the starting point based on filters
+        start_query_parts = []
+        params = {"limit": limit, "depth": depth}
+        
+        if book:
+            start_query_parts.append("v.book = $book")
+            params["book"] = book
+        
+        if chapter is not None:
+            start_query_parts.append("v.chapter = $chapter")
+            params["chapter"] = chapter
+            
+        if verse is not None:
+            start_query_parts.append("v.verse = $verse")
+            params["verse"] = verse
+        
+        # Build the starting match clause
+        start_match = "MATCH (v:Verse)"
+        if start_query_parts:
+            start_match += f" WHERE {' AND '.join(start_query_parts)}"
+        
+        # The query to get the knowledge graph, limited by depth
+        query = f"""
+        {start_match}
+        CALL {{
+            WITH v
+            MATCH path = (v)-[:REFERENCES*1..2]-(related:Verse)
+            RETURN related, 'verse_reference' as connection_type, null as knowledge_card
+            UNION
+            WITH v
+            MATCH (k:KnowledgeCard)-[:REFERENCES]->(v)
+            MATCH (u:User)-[:CREATED]->(k)
+            RETURN k as related, 'knowledge_card' as connection_type, k as knowledge_card
+        }}
+        RETURN v as source_node, related as target_node, connection_type, knowledge_card
+        LIMIT $limit
+        """
+        
+        results = session.run(query, params)
+        
+        # Process the results into a graph structure
+        nodes = {}
+        edges = []
+        
+        for record in results:
+            source = record["source_node"]
+            target = record["target_node"]
+            conn_type = record["connection_type"]
+            
+            # Process source node (always a verse)
+            source_id = f"verse-{source['book']}-{source['chapter']}-{source['verse']}"
+            if source_id not in nodes:
+                nodes[source_id] = {
+                    "id": source_id,
+                    "type": "verse",
+                    "book": source["book"],
+                    "chapter": source["chapter"],
+                    "verse": source["verse"],
+                    "text": source.get("text", "")
+                }
+            
+            # Process target node (verse or knowledge card)
+            if conn_type == 'verse_reference':
+                target_id = f"verse-{target['book']}-{target['chapter']}-{target['verse']}"
+                if target_id not in nodes:
+                    nodes[target_id] = {
+                        "id": target_id,
+                        "type": "verse",
+                        "book": target["book"],
+                        "chapter": target["chapter"],
+                        "verse": target["verse"],
+                        "text": target.get("text", "")
+                    }
+            else:  # knowledge_card
+                kc = record["knowledge_card"]
+                target_id = f"kc-{kc['id']}"
+                if target_id not in nodes:
+                    nodes[target_id] = {
+                        "id": target_id,
+                        "type": "knowledge_card",
+                        "card_id": kc["id"],
+                        "title": kc["title"],
+                        "content": kc["content"],
+                        "card_type": kc["type"],
+                        "tags": kc.get("tags", []),
+                        "user_id": kc["user_id"]
+                    }
+            
+            # Create edge
+            edge_id = f"{source_id}-{conn_type}-{target_id}"
+            edges.append({
+                "id": edge_id,
+                "source": source_id,
+                "target": target_id,
+                "type": conn_type
+            })
+        
+        return {
+            "nodes": list(nodes.values()),
+            "edges": edges
+        }
 
 if __name__ == "__main__":
     import uvicorn

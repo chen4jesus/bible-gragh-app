@@ -111,6 +111,36 @@ export interface KnowledgeCardUpdate {
   type?: string;
 }
 
+// Add the KnowledgeGraphData type and interface definitions
+export interface KnowledgeGraphData {
+  nodes: GraphNode[];
+  edges: GraphEdge[];
+}
+
+export interface GraphNode {
+  id: string;
+  type: 'verse' | 'knowledge_card';
+  // Verse properties
+  book?: string;
+  chapter?: number;
+  verse?: number;
+  text?: string;
+  // Knowledge card properties
+  card_id?: string;
+  title?: string;
+  content?: string;
+  card_type?: string;
+  tags?: string[];
+  user_id?: string;
+}
+
+export interface GraphEdge {
+  id: string;
+  source: string;
+  target: string;
+  type: string;
+}
+
 /**
  * API Endpoints
  * 
@@ -132,13 +162,36 @@ const ENDPOINTS = {
   /**
    * Get filtered graph data based on various parameters
    */
-  GRAPH_DATA_WITH_PARAMS: (book?: string, chapter?: number, verse?: number, limit: number = 100) => {
+  GRAPH_DATA_WITH_PARAMS: (book?: string, chapter?: number, verse?: number, includeKnowledgeCards: boolean = false, limit: number = 100) => {
     let url = `${API_BASE_URL}/graph-data`;
     const params = new URLSearchParams();
     
     if (book) params.append('book', book);
     if (chapter !== undefined) params.append('chapter', chapter.toString());
     if (verse !== undefined) params.append('verse', verse.toString());
+    if (includeKnowledgeCards) params.append('include_knowledge_cards', 'true');
+    if (limit) params.append('limit', limit.toString());
+    
+    const queryString = params.toString();
+    return queryString ? `${url}?${queryString}` : url;
+  },
+  
+  /**
+   * Get comprehensive knowledge graph
+   */
+  KNOWLEDGE_GRAPH: `${API_BASE_URL}/knowledge-graph`,
+  
+  /**
+   * Get filtered knowledge graph
+   */
+  KNOWLEDGE_GRAPH_WITH_PARAMS: (book?: string, chapter?: number, verse?: number, depth: number = 2, limit: number = 100) => {
+    let url = `${API_BASE_URL}/knowledge-graph`;
+    const params = new URLSearchParams();
+    
+    if (book) params.append('book', book);
+    if (chapter !== undefined) params.append('chapter', chapter.toString());
+    if (verse !== undefined) params.append('verse', verse.toString());
+    if (depth) params.append('depth', depth.toString());
     if (limit) params.append('limit', limit.toString());
     
     const queryString = params.toString();
@@ -247,7 +300,7 @@ export const bibleApi = {
    */
   async getFilteredGraphData(book?: string, chapter?: number, verse?: number, limit: number = 100): Promise<GraphData[]> {
     try {
-      const url = ENDPOINTS.GRAPH_DATA_WITH_PARAMS(book, chapter, verse, limit);
+      const url = ENDPOINTS.GRAPH_DATA_WITH_PARAMS(book, chapter, verse, false, limit);
       const response = await apiClient.get<GraphData[]>(url);
       return response.data;
     } catch (error) {
@@ -407,5 +460,61 @@ export const bibleApi = {
   // Check if user is authenticated
   isAuthenticated(): boolean {
     return !!localStorage.getItem('bibleGraph_token');
-  }
+  },
+
+  /**
+   * Fetch graph data with knowledge cards
+   * 
+   * @param book - Optional book filter
+   * @param chapter - Optional chapter filter
+   * @param verse - Optional verse filter
+   * @param includeKnowledgeCards - Whether to include knowledge cards in the graph
+   * @param limit - Maximum number of results to return
+   * @returns Promise with structured graph data including knowledge cards if requested
+   * @throws Error if the API request fails
+   */
+  async getGraphDataWithKnowledgeCards(
+    book?: string, 
+    chapter?: number, 
+    verse?: number, 
+    includeKnowledgeCards: boolean = true,
+    limit: number = 100
+  ): Promise<any> {
+    try {
+      const url = ENDPOINTS.GRAPH_DATA_WITH_PARAMS(book, chapter, verse, includeKnowledgeCards, limit);
+      const response = await apiClient.get(url);
+      return response.data;
+    } catch (error) {
+      console.error('Error fetching graph data with knowledge cards:', error);
+      throw error;
+    }
+  },
+
+  /**
+   * Fetch comprehensive knowledge graph
+   * 
+   * @param book - Optional book filter
+   * @param chapter - Optional chapter filter
+   * @param verse - Optional verse filter
+   * @param depth - Depth of relationships to traverse
+   * @param limit - Maximum number of results to return
+   * @returns Promise with comprehensive knowledge graph data
+   * @throws Error if the API request fails
+   */
+  async getKnowledgeGraph(
+    book?: string,
+    chapter?: number,
+    verse?: number,
+    depth: number = 2,
+    limit: number = 100
+  ): Promise<KnowledgeGraphData> {
+    try {
+      const url = ENDPOINTS.KNOWLEDGE_GRAPH_WITH_PARAMS(book, chapter, verse, depth, limit);
+      const response = await apiClient.get<KnowledgeGraphData>(url);
+      return response.data;
+    } catch (error) {
+      console.error('Error fetching knowledge graph:', error);
+      throw error;
+    }
+  },
 }; 

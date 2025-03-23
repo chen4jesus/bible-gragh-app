@@ -25,7 +25,9 @@
     "overview": "Bible Map Overview",
     "expandConnections": "Expand Node Connections",
     "collapseConnections": "Collapse Node Connections",
-    "edgeInfo": "Reference: {type}"
+    "edgeInfo": "Reference: {type}",
+    "showKnowledgeCards": "Show Knowledge Cards",
+    "searchPlaceholder": "Search verses..."
   },
   "readingPanel": {
     "title": "Bible Text",
@@ -44,6 +46,73 @@
     "chapter": "Chapter",
     "verse": "Verse",
     "add": "Add to Graph"
+  },
+  "knowledgeCards": {
+    "title": "Knowledge Cards",
+    "noCards": "No knowledge cards found for this verse.",
+    "loading": "Loading knowledge cards...",
+    "retry": "Try Again",
+    "errors": {
+      "fetchFailed": "Failed to load knowledge cards. Please try again."
+    }
+  },
+  "knowledgeCard": {
+    "editingCard": "Editing knowledge card",
+    "fields": {
+      "title": "Title",
+      "content": "Content",
+      "type": "Type",
+      "tags": "Tags (comma separated)",
+      "tagsPlaceholder": "faith, love, hope"
+    },
+    "types": {
+      "note": "Note",
+      "commentary": "Commentary",
+      "reflection": "Reflection",
+      "question": "Question"
+    },
+    "actions": {
+      "edit": "Edit",
+      "delete": "Delete",
+      "save": "Save",
+      "saving": "Saving...",
+      "cancel": "Cancel"
+    },
+    "updated": "Updated",
+    "errors": {
+      "updateFailed": "Failed to update knowledge card. Please try again.",
+      "deleteFailed": "Failed to delete knowledge card. Please try again."
+    }
+  },
+  "createKnowledgeCard": {
+    "title": "Add Knowledge Card",
+    "addCard": "Add Knowledge Card",
+    "fields": {
+      "title": "Title",
+      "content": "Content",
+      "type": "Type",
+      "tags": "Tags (comma separated)"
+    },
+    "types": {
+      "note": "Note",
+      "commentary": "Commentary",
+      "reflection": "Reflection",
+      "question": "Question"
+    },
+    "placeholders": {
+      "title": "Enter a title",
+      "content": "Enter your insights, comments, or questions about this verse",
+      "tags": "faith, love, hope"
+    },
+    "tagsHelp": "Separate tags with commas to categorize your knowledge card",
+    "actions": {
+      "save": "Save",
+      "saving": "Saving...",
+      "cancel": "Cancel"
+    },
+    "errors": {
+      "createFailed": "Failed to create knowledge card. Please try again."
+    }
   },
   "auth": {
     "login": "Login",
@@ -77,5 +146,8 @@
       "passwordTooShort": "Password must be at least 8 characters long",
       "registrationFailed": "Registration failed. Please try again."
     }
-  }
+  },
+  "All Books": "All Books",
+  "Show Knowledge Cards": "Show Knowledge Cards",
+  "Search verses...": "Search verses..."
 } 

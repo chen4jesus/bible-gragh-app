@@ -19,11 +19,21 @@ import {
   ReactFlowProvider,
   SelectionMode,
   MarkerType,
+  NodeTypes,
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import { theme } from '../styles/theme'
 import { useTranslations } from 'next-intl'
-import { bibleApi, GraphData as ApiGraphData, VerseData, CrossReferenceData } from '../api/bibleApi'
+import { 
+  bibleApi, 
+  GraphData as ApiGraphData, 
+  VerseData, 
+  CrossReferenceData,
+  KnowledgeGraphData,
+  GraphNode as ApiGraphNode,
+  GraphEdge as ApiGraphEdge,
+  KnowledgeCard
+} from '../api/bibleApi'
 import VerseKnowledgeCards from './VerseKnowledgeCards'
 
 type GraphData = ApiGraphData;
@@ -33,6 +43,12 @@ interface BibleNodeData extends Record<string, unknown> {
   book: string
   chapter: number
   verse: number
+  type?: 'verse' | 'knowledge_card'
+  cardId?: string
+  cardType?: string
+  content?: string
+  tags?: string[]
+  userId?: string
 }
 
 type BibleNode = Node<BibleNodeData>
@@ -135,6 +151,69 @@ function createUniqueEdgeId(source: string, target: string): string {
   return `edge-${first}-${second}`
 }
 
+// Then add a custom node component for knowledge cards
+const KnowledgeCardNode = ({ data }: { data: BibleNodeData }) => {
+  const cardTypeColors = {
+    note: theme.colors.blue[400],
+    commentary: theme.colors.purple[400],
+    reflection: theme.colors.green[400],
+    default: theme.colors.gray[400]
+  };
+
+  const getCardColor = (cardType: string = 'default') => {
+    return cardTypeColors[cardType as keyof typeof cardTypeColors] || cardTypeColors.default;
+  };
+
+  return (
+    <div 
+      className="px-4 py-3 rounded-lg border shadow-md"
+      style={{ 
+        background: 'white',
+        borderColor: getCardColor(data.cardType),
+        borderWidth: '2px',
+        minWidth: '200px',
+        maxWidth: '250px'
+      }}
+    >
+      <div className="flex items-center mb-2">
+        <div 
+          className="w-3 h-3 rounded-full mr-2" 
+          style={{ backgroundColor: getCardColor(data.cardType) }}
+        />
+        <div className="text-xs text-gray-500 uppercase tracking-wider">{data.cardType}</div>
+      </div>
+      <h3 className="font-semibold text-sm truncate" title={data.label}>{data.label}</h3>
+      {data.content && (
+        <p className="text-xs text-gray-600 mt-1 line-clamp-2" title={data.content as string}>
+          {data.content}
+        </p>
+      )}
+      {data.tags && data.tags.length > 0 && (
+        <div className="flex flex-wrap gap-1 mt-2">
+          {(data.tags as string[]).slice(0, 3).map((tag, index) => (
+            <span 
+              key={index} 
+              className="px-1.5 py-0.5 text-xs rounded-full bg-gray-100 text-gray-600"
+            >
+              {tag}
+            </span>
+          ))}
+          {(data.tags as string[]).length > 3 && (
+            <span className="px-1.5 py-0.5 text-xs rounded-full bg-gray-100 text-gray-600">
+              +{(data.tags as string[]).length - 3}
+            </span>
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
+
+// Add the nodeTypes object
+const nodeTypes: NodeTypes = {
+  knowledgeCard: KnowledgeCardNode
+};
+
 function BibleGraphContent({ selectedVerse }: BibleGraphProps) {
   const t = useTranslations()
   
@@ -187,32 +266,9 @@ function BibleGraphContent({ selectedVerse }: BibleGraphProps) {
   // Add a new state to track currently selected node for expansion
   const [selectedNodeForExpansion, setSelectedNodeForExpansion] = useState<BibleNode | null>(null);
   
-  // Add initial data loading - load Genesis 1:1 on first render
-  useEffect(() => {
-    if (!initialDataLoaded && flowNodes.length === 0 && !loading) {
-      setInitialDataLoaded(true); // Set flag to prevent multiple loads
-      loadVerseData('创世记', 1, 1);
-    }
-  }, [initialDataLoaded, flowNodes.length, loading]);
-
-  // Watch for selected verse changes from the Bible Navigator
-  useEffect(() => {
-    if (selectedVerse && !loading) {
-      const verseId = `${selectedVerse.book}-${selectedVerse.chapter}-${selectedVerse.verse}`;
-      
-      // Check if we already have this verse loaded
-      const existingNode = flowNodes.find(node => node.id === verseId);
-      
-      if (!existingNode) {
-        // Fetch data for this verse since it's not already loaded
-        loadVerseData(selectedVerse.book, selectedVerse.chapter, selectedVerse.verse);
-      } else {
-        // The verse is already in the graph, just focus on it
-        focusOnNode(verseId);
-      }
-    }
-  }, [selectedVerse]);
-
+  // Add new state for controlling knowledge card visibility
+  const [showKnowledgeCards, setShowKnowledgeCards] = useState(true);
+  
   // Function to load verse data when a selection is made
   const loadVerseData = async (book: string, chapter: number, verse: number) => {
     try {
@@ -346,14 +402,18 @@ function BibleGraphContent({ selectedVerse }: BibleGraphProps) {
 
   // Function to focus on a specific node
   const focusOnNode = useCallback((nodeId: string) => {
+    console.log('Focusing on node:', nodeId);
     const node = flowNodes.find(n => n.id === nodeId);
     if (node && reactFlowInstance) {
+      console.log('Node found, centering view:', node.position);
       // Center the view on this node
       reactFlowInstance.setCenter(node.position.x, node.position.y, { duration: 800 });
       // Update the last focused node
       setLastFocusedVerseId(nodeId);
+    } else {
+      console.log('Node not found or reactFlowInstance not ready');
     }
-  }, [flowNodes, reactFlowInstance]);
+  }, [flowNodes, reactFlowInstance, setLastFocusedVerseId]);
 
   const onNodesChange = useCallback(
     (changes: NodeChange[]) => {
@@ -1175,13 +1235,16 @@ function BibleGraphContent({ selectedVerse }: BibleGraphProps) {
 
   // Update the useEffect to use our new more robust loading system
   useEffect(() => {
+    console.log('selectedVerse effect running', selectedVerse);
+    
     if (!selectedVerse || loading) return;
 
     const { book, chapter, verse } = selectedVerse;
     const verseId = `${book}-${chapter}-${verse}`;
     
     // Prevent repeat focusing on the same verse
-    if (verseId === lastFocusedVerseId) {
+    if (verseId === lastFocusedVerseId && !userHasNavigated) {
+      console.log('Skipping focus, already focused on verse', verseId);
       return;
     }
     
@@ -1191,14 +1254,221 @@ function BibleGraphContent({ selectedVerse }: BibleGraphProps) {
     // Check if node already exists
     const existingNode = flowNodes.find(node => node.id === verseId);
     if (existingNode) {
+      console.log('Found existing node, focusing on it', verseId);
       focusOnNode(verseId);
       return;
     }
     
+    console.log('Loading new verse data for', verseId);
     // Use our loadVerseData function to load verse data
     loadVerseData(book, chapter, verse);
     
-  }, [selectedVerse, lastFocusedVerseId, loadVerseData, loading, flowNodes]);
+  }, [selectedVerse, lastFocusedVerseId, userHasNavigated, flowNodes, focusOnNode, loadVerseData, loading, setUserHasNavigated]);
+
+  // Convert loadKnowledgeGraphData to use useCallback
+  // Replace the existing loadKnowledgeGraphData function with this memoized version
+  const loadKnowledgeGraphData = useCallback(async (book: string, chapter: number, verse: number) => {
+    try {
+      setLoading(true);
+      setError(null);
+      
+      const verseId = `${book}-${chapter}-${verse}`;
+      
+      // Fetch the knowledge graph data for this verse
+      const graphData = await bibleApi.getKnowledgeGraph(book, chapter, verse, 2, 50);
+      
+      if (!graphData || (!graphData.nodes.length && !graphData.edges.length)) {
+        console.log('No knowledge graph data found for this verse, falling back to verse data');
+        // Fall back to the original verse data loading
+        await loadVerseData(book, chapter, verse);
+        return;
+      }
+      
+      // Process the API graph data to React Flow format
+      const newNodes: BibleNode[] = [];
+      const newEdges: Edge[] = [];
+      const nodeMap = new Map<string, BibleNode>();
+      
+      // Extract unique books for future use
+      const uniqueBooks = Array.from(
+        new Set(
+          graphData.nodes
+            .filter(node => node.type === 'verse' && node.book)
+            .map(node => node.book as string)
+        )
+      ).sort();
+      setBooks(uniqueBooks);
+      
+      // First pass - create all nodes
+      graphData.nodes.forEach((apiNode, index) => {
+        let nodeId = apiNode.id;
+        let nodeType = 'default';
+        let nodePosition = { 
+          x: 0, 
+          y: 0 
+        };
+        let nodeData: BibleNodeData;
+        
+        if (apiNode.type === 'verse') {
+          nodeData = {
+            label: `${apiNode.book} ${apiNode.chapter}:${apiNode.verse}`,
+            book: apiNode.book as string,
+            chapter: apiNode.chapter as number,
+            verse: apiNode.verse as number,
+            type: 'verse'
+          };
+          nodeType = 'default';
+        } else {
+          // Knowledge card node
+          nodeData = {
+            label: apiNode.title as string,
+            book: apiNode.book as string,
+            chapter: apiNode.chapter as number,
+            verse: apiNode.verse as number,
+            type: 'knowledge_card',
+            cardId: apiNode.card_id,
+            cardType: apiNode.card_type,
+            content: apiNode.content,
+            tags: apiNode.tags as string[],
+            userId: apiNode.user_id
+          };
+          nodeType = 'knowledgeCard';
+        }
+        
+        const node: BibleNode = {
+          id: nodeId,
+          type: nodeType,
+          position: nodePosition,
+          data: nodeData,
+          sourcePosition: Position.Right,
+          targetPosition: Position.Left,
+          style: nodeType === 'default' ? {
+            ...nodeStyle,
+            background: getNodeColor(apiNode.book as string),
+          } : undefined,
+        };
+        
+        nodeMap.set(nodeId, node);
+        newNodes.push(node);
+      });
+      
+      // Second pass - create all edges
+      graphData.edges.forEach((apiEdge) => {
+        const edgeId = apiEdge.id;
+        
+        // Only add edge if both source and target nodes exist
+        if (nodeMap.has(apiEdge.source) && nodeMap.has(apiEdge.target)) {
+          newEdges.push({
+            id: edgeId,
+            source: apiEdge.source,
+            target: apiEdge.target,
+            label: apiEdge.type,
+            ...defaultEdgeOptions,
+          });
+        }
+      });
+      
+      // Position the nodes in a radial layout
+      const centerX = 0;
+      const centerY = 0;
+      const mainVerseNode = nodeMap.get(verseId);
+      
+      if (mainVerseNode) {
+        // Position main verse at center
+        mainVerseNode.position = { x: centerX, y: centerY };
+        
+        // Position other nodes in a radial pattern
+        const verseNodes = newNodes.filter(node => node.data.type === 'verse' && node.id !== verseId);
+        const knowledgeCardNodes = newNodes.filter(node => node.data.type === 'knowledge_card');
+        
+        // Position verse nodes in an inner circle
+        const verseRadius = Math.max(250, verseNodes.length * 20);
+        verseNodes.forEach((node, index) => {
+          const angle = (2 * Math.PI * index) / verseNodes.length;
+          node.position = {
+            x: centerX + verseRadius * Math.cos(angle),
+            y: centerY + verseRadius * Math.sin(angle),
+          };
+        });
+        
+        // Position knowledge card nodes in an outer circle
+        if (knowledgeCardNodes.length > 0) {
+          const cardRadius = verseRadius + 150;
+          knowledgeCardNodes.forEach((node, index) => {
+            const angle = (2 * Math.PI * index) / knowledgeCardNodes.length;
+            node.position = {
+              x: centerX + cardRadius * Math.cos(angle),
+              y: centerY + cardRadius * Math.sin(angle),
+            };
+          });
+        }
+      }
+      
+      // Filter nodes/edges based on visibility toggle
+      const filteredNodes = showKnowledgeCards 
+        ? newNodes 
+        : newNodes.filter(node => node.data.type !== 'knowledge_card');
+      
+      const filteredEdges = showKnowledgeCards 
+        ? newEdges 
+        : newEdges.filter(edge => {
+            const sourceNode = nodeMap.get(edge.source);
+            const targetNode = nodeMap.get(edge.target);
+            return !(
+              (sourceNode && sourceNode.data.type === 'knowledge_card') ||
+              (targetNode && targetNode.data.type === 'knowledge_card')
+            );
+          });
+      
+      setFlowNodes(filteredNodes);
+      setFlowEdges(filteredEdges);
+      focusOnNode(verseId);
+    } catch (error) {
+      console.error('Error loading knowledge graph data:', error);
+      setError(error instanceof Error ? error.message : 'An error occurred loading knowledge graph');
+      // Fall back to regular verse data loading
+      loadVerseData(book, chapter, verse);
+    } finally {
+      setLoading(false);
+    }
+  }, [setLoading, setError, loadVerseData, focusOnNode, setBooks, setFlowNodes, setFlowEdges, showKnowledgeCards, getNodeColor]);
+
+  // Restore the toggleKnowledgeCards function that was accidentally removed
+  const toggleKnowledgeCards = useCallback(() => {
+    setShowKnowledgeCards(prev => !prev);
+    
+    // Update nodes and edges visibility based on the toggle
+    if (!showKnowledgeCards) {
+      // If we're showing cards, reload with full data
+      const activeNode = flowNodes.find(node => node.id === lastFocusedVerseId);
+      if (activeNode) {
+        loadKnowledgeGraphData(
+          activeNode.data.book,
+          activeNode.data.chapter,
+          activeNode.data.verse
+        );
+      }
+    } else {
+      // If we're hiding cards, filter them out from current data
+      setFlowNodes(prev => prev.filter(node => node.data.type !== 'knowledge_card'));
+      setFlowEdges(prev => {
+        const nodeIds = new Set(flowNodes.filter(n => n.data.type !== 'knowledge_card').map(n => n.id));
+        return prev.filter(edge => 
+          nodeIds.has(edge.source) && nodeIds.has(edge.target)
+        );
+      });
+    }
+  }, [showKnowledgeCards, flowNodes, lastFocusedVerseId, loadKnowledgeGraphData]);
+
+  // Fix initialDataLoaded setting in initial load useEffect
+  // Update the useEffect for initial data loading
+  useEffect(() => {
+    if (!initialDataLoaded && flowNodes.length === 0 && !loading) {
+      setInitialDataLoaded(true); // Change from false to true to prevent multiple loads
+      // Use the new method to load knowledge graph data instead
+      loadKnowledgeGraphData('创世记', 1, 1);
+    }
+  }, [initialDataLoaded, flowNodes.length, loading, loadKnowledgeGraphData]);
 
   if (loading) {
     return <div className="flex items-center justify-center h-screen">Loading verse connections...</div>
@@ -1209,136 +1479,96 @@ function BibleGraphContent({ selectedVerse }: BibleGraphProps) {
   }
 
   return (
-    <div style={{ width: '100%', height: '100%', position: 'relative' }}>
-      <ReactFlow
-        nodes={filteredNodes.filter((node, index, self) => 
-          index === self.findIndex(n => n.id === node.id)
-        )}
-        edges={filteredEdges.filter((edge, index, self) => 
-          index === self.findIndex(e => e.id === edge.id)
-        )}
-        onNodesChange={onNodesChange}
-        onEdgesChange={onEdgesChange}
-        onNodeClick={onNodeClick}
-        onEdgeMouseEnter={onEdgeMouseEnter}
-        onEdgeMouseLeave={onEdgeMouseLeave}
-        defaultEdgeOptions={defaultEdgeOptions}
-        fitView
-        fitViewOptions={{ padding: 0.2 }}
-        minZoom={0.1}
-        maxZoom={2}
-        defaultViewport={{ x: 0, y: 0, zoom: 1 }}
-        proOptions={{ hideAttribution: true }}
-        nodesDraggable={nodeDraggable}
-        nodesConnectable={nodeConnectable}
-        snapToGrid={showGrid}
-        snapGrid={[15, 15]}
-        selectionMode={selectionMode}
-        selectionOnDrag
-        multiSelectionKeyCode="Control"
-        panOnDrag={!shiftKeyActive}
-        panOnScroll
-        zoomOnScroll
-        zoomOnPinch
-        zoomOnDoubleClick={false}
-        onMove={handleViewportChange}
-        key={`flow-${hasFixedNaN ? 'fixed' : 'normal'}-${flowNodes.length}`}
-      >
-        <Background
-          color={theme.colors.gray[200]}
-          gap={16}
-          size={1}
-        />
-        <Controls
-          showInteractive={false}
-          className="bg-white shadow-lg rounded-lg"
-        />
-
-        <Panel position="top-left" className="bg-white p-4 rounded-lg shadow-lg">
-          <div className="space-y-4">
-            <div>
-              <label htmlFor="search" className="block text-sm font-medium text-gray-700">
-                {t('navigation.search')}
+    <div className="h-full w-full flex flex-col">
+      {error && (
+        <div className="bg-red-100 text-red-700 p-2 text-sm rounded">{error}</div>
+      )}
+      
+      <div className="flex-grow flex flex-col relative">
+        <ReactFlow
+          nodes={flowNodes}
+          edges={flowEdges}
+          onNodesChange={onNodesChange}
+          onEdgesChange={onEdgesChange}
+          onNodeClick={onNodeClick}
+          nodeTypes={nodeTypes}
+          selectionMode={selectionMode}
+          deleteKeyCode={deleteKeyPressed ? 'Delete' : null}
+          nodesDraggable={nodeDraggable}
+          nodesConnectable={nodeConnectable}
+          fitView
+          minZoom={0.1}
+          maxZoom={2}
+        >
+          <Background color="#ccc" gap={16} />
+          <Controls />
+          <MiniMap nodeColor={(node) => {
+            const nodeData = node.data as BibleNodeData;
+            return nodeData.type === 'knowledge_card' 
+              ? theme.colors.primary[300] 
+              : getNodeColor(nodeData.book);
+          }} />
+          
+          <Panel position="top-left" className="bg-white p-2 rounded shadow-md">
+            {/* Add a toggle control for knowledge cards */}
+            <div className="flex items-center mb-2">
+              <label className="flex items-center cursor-pointer">
+                <input 
+                  type="checkbox" 
+                  checked={showKnowledgeCards}
+                  onChange={toggleKnowledgeCards}
+                  className="mr-2"
+                />
+                <span className="text-sm">{t('graph.showKnowledgeCards')}</span>
               </label>
-              <input
-                id="search"
-                type="text"
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                placeholder={`${t('navigation.search')}...`}
-                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
-              />
             </div>
-            <div>
-              <label htmlFor="book" className="block text-sm font-medium text-gray-700">
-                {t('navigation.selectBook')}
-              </label>
+            
+            {/* Existing controls */}
+            <div className="flex flex-col gap-1">
+              {/* Book filter */}
               <select
-                id="book"
                 value={selectedBook || ''}
                 onChange={(e) => setSelectedBook(e.target.value || null)}
-                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                className="p-1 text-sm border rounded"
               >
-                <option value="" key="all-books">{t('navigation.allBooks')}</option>
+                <option value="">{t('navigation.allBooks')}</option>
                 {books.map((book) => (
-                  <option key={`book-${book}`} value={book}>
+                  <option key={book} value={book}>
                     {book}
                   </option>
                 ))}
               </select>
-            </div>
-          </div>
-        </Panel>
-        {activeVerse && (
-          <Panel position="top-right" className="bg-white p-4 rounded-lg shadow-lg max-h-[80vh] overflow-y-auto" style={{ width: '350px' }}>
-            <div className="space-y-4 flex flex-col h-full">
-              <div>
-                <h3 className="text-lg font-medium text-gray-900">
-                  {activeVerse.book} {activeVerse.chapter}:{activeVerse.verse}
-                </h3>
-                <p className="mt-1 text-sm text-gray-500">{activeVerse.text}</p>
-                <div className="mt-2">
-                  <a 
-                    href={`/verse/${encodeURIComponent(activeVerse.book)}/${activeVerse.chapter}/${activeVerse.verse}`}
-                    className="text-sm text-blue-600 hover:underline"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  >
-                    View verse page
-                  </a>
-                </div>
-              </div>
               
-              <VerseKnowledgeCards verse={activeVerse} />
-              
-              <div className="flex justify-end items-center gap-2 mt-auto">
-                {selectedNodeForExpansion && (
-                  <button
-                    onClick={expandSelectedNode}
-                    className="px-4 py-2 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors shadow-sm w-32"
-                  >
-                    {expandedNodes.has(`${selectedNodeForExpansion.data.book}-${selectedNodeForExpansion.data.chapter}-${selectedNodeForExpansion.data.verse}`) 
-                      ? t('graph.collapseConnections') 
-                      : t('graph.expandConnections')}
-                  </button>
-                )}
-                <button
-                  onClick={() => {
-                    setActiveVerse(null);
-                    setSelectedNodeForExpansion(null);
-                  }}
-                  className="px-4 py-2 text-sm border border-gray-300 bg-white text-gray-700 rounded-md hover:bg-gray-50 transition-colors shadow-sm w-24"
-                >
-                  {t('graph.resetView')}
-                </button>
-              </div>
+              {/* Search */}
+              <input
+                type="text"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                placeholder={t('graph.searchPlaceholder')}
+                className="p-1 text-sm border rounded"
+              />
             </div>
           </Panel>
-        )}
-        
-      </ReactFlow>
+        </ReactFlow>
+      </div>
+
+      {activeVerse && (
+        <div className="p-4 border-t bg-gray-50 max-h-[30vh] overflow-auto">
+          <h2 className="text-lg font-semibold mb-2">
+            {activeVerse.book} {activeVerse.chapter}:{activeVerse.verse}
+          </h2>
+          <p className="text-gray-800">{activeVerse.text}</p>
+          
+          <VerseKnowledgeCards
+            book={activeVerse.book}
+            chapter={activeVerse.chapter}
+            verse={activeVerse.verse}
+            verseText={activeVerse.text}
+          />
+        </div>
+      )}
     </div>
-  )
+  );
 }
 
 export function BibleGraph({ selectedVerse }: BibleGraphProps) {

@@ -25,7 +25,9 @@
     "overview": "圣经地图概览",
     "expandConnections": "展开节点连接",
     "collapseConnections": "折叠节点连接",
-    "edgeInfo": "引用: {type}"
+    "edgeInfo": "引用: {type}",
+    "showKnowledgeCards": "显示知识卡片",
+    "searchPlaceholder": "搜索经文..."
   },
   "readingPanel": {
     "title": "圣经文本",
@@ -44,6 +46,73 @@
     "chapter": "章",
     "verse": "节",
     "add": "添加到图表"
+  },
+  "knowledgeCards": {
+    "title": "知识卡片",
+    "noCards": "此经文尚无知识卡片。",
+    "loading": "加载知识卡片中...",
+    "retry": "重试",
+    "errors": {
+      "fetchFailed": "加载知识卡片失败，请重试。"
+    }
+  },
+  "knowledgeCard": {
+    "editingCard": "编辑知识卡片",
+    "fields": {
+      "title": "标题",
+      "content": "内容",
+      "type": "类型",
+      "tags": "标签（用逗号分隔）",
+      "tagsPlaceholder": "信心, 爱, 希望"
+    },
+    "types": {
+      "note": "笔记",
+      "commentary": "注释",
+      "reflection": "反思",
+      "question": "问题"
+    },
+    "actions": {
+      "edit": "编辑",
+      "delete": "删除",
+      "save": "保存",
+      "saving": "保存中...",
+      "cancel": "取消"
+    },
+    "updated": "更新于",
+    "errors": {
+      "updateFailed": "更新知识卡片失败，请重试。",
+      "deleteFailed": "删除知识卡片失败，请重试。"
+    }
+  },
+  "createKnowledgeCard": {
+    "title": "添加知识卡片",
+    "addCard": "添加知识卡片",
+    "fields": {
+      "title": "标题",
+      "content": "内容",
+      "type": "类型",
+      "tags": "标签（用逗号分隔）"
+    },
+    "types": {
+      "note": "笔记",
+      "commentary": "注释",
+      "reflection": "反思",
+      "question": "问题"
+    },
+    "placeholders": {
+      "title": "输入标题",
+      "content": "输入您对这节经文的见解、评论或问题",
+      "tags": "信心, 爱, 希望"
+    },
+    "tagsHelp": "使用逗号分隔标签以便分类您的知识卡片",
+    "actions": {
+      "save": "保存",
+      "saving": "保存中...",
+      "cancel": "取消"
+    },
+    "errors": {
+      "createFailed": "创建知识卡片失败，请重试。"
+    }
   },
   "auth": {
     "login": "登录",
@@ -77,5 +146,8 @@
       "passwordTooShort": "密码长度至少为8个字符",
       "registrationFailed": "注册失败，请重试。"
     }
-  }
+  },
+  "All Books": "所有书卷",
+  "Show Knowledge Cards": "显示知识卡片",
+  "Search verses...": "搜索经文..."
 } 
