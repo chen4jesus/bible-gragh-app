@@ -89,6 +89,12 @@ const defaultEdgeOptions = {
   pathOptions: {
     offset: 15,
     borderRadius: 5,
+  },
+  markerEnd: {
+    type: MarkerType.Arrow,
+    width: 10,
+    height: 10,
+    color: theme.colors.gray[400],
   }
 }
 
@@ -113,7 +119,7 @@ const expandedEdgeStyle = {
 // Define edge styles for Bible navigator selected verses
 const selectedVerseEdgeStyle = {
   ...edgeStyle,
-  stroke: '#E53E3E', // Use a hardcoded red color since theme doesn't have red
+  stroke: '#db9004', // Use a hardcoded red color since theme doesn't have red
   strokeWidth: 3,
   opacity: 0.9,
   filter: 'drop-shadow(0 1px 3px rgba(220, 38, 38, 0.4))', // Add red glow shadow
@@ -432,6 +438,15 @@ function BibleGraphContent({ selectedVerse }: BibleGraphProps) {
       const { book, chapter, verse } = clickedNode.data
       const nodeId = `${book}-${chapter}-${verse}`
       
+      // Focus immediately on the clicked node with a zoom animation
+      if (reactFlowInstance) {
+        reactFlowInstance.setCenter(
+          clickedNode.position.x, 
+          clickedNode.position.y, 
+          { duration: 400, zoom: 1.2 }
+        );
+      }
+      
       // Toggle expanded state
       const expandedNodesArray = Array.from(expandedNodes)
       if (expandedNodes.has(nodeId)) {
@@ -440,127 +455,127 @@ function BibleGraphContent({ selectedVerse }: BibleGraphProps) {
         return
       }
 
-      // Fetch related verses from the API
-      const response = await fetch(
-        `http://localhost:8000/cross-references/${book}/${chapter}/${verse}`
-      )
-      if (!response.ok) {
-        throw new Error('Failed to fetch verse cross-references')
-      }
+      // Show loading indicator for this specific node
+      setLoadingVerses(prev => new Set(prev).add(nodeId));
       
-      const relationships: GraphData[] = await response.json()
-      console.log(`Received ${relationships.length} relationships for ${nodeId}`)
-
-      // Calculate optimal positions for new nodes
-      const positions = calculateOptimalLayout(clickedNode, relationships.length, flowNodes)
-
-      // Create new nodes and edges
-      const newNodes: BibleNode[] = []
-      const newEdges: Edge[] = []
-      const existingNodeIds = new Set(flowNodes.map(n => n.id))
-
-      relationships.forEach((rel, index) => {
-        const targetId = `${rel.target_book}-${rel.target_chapter}-${rel.target_verse}`
+      try {
+        // Fetch related verses from the API
+        const response = await fetch(
+          `http://localhost:8000/cross-references/${book}/${chapter}/${verse}`
+        )
+        if (!response.ok) {
+          throw new Error('Failed to fetch verse cross-references')
+        }
         
-        // Only add new nodes if they don't exist
-        if (!existingNodeIds.has(targetId)) {
-          const newNode: BibleNode = {
-            id: targetId,
-            type: 'default',
-            position: positions[index],
-            data: {
-              label: `${rel.target_book} ${rel.target_chapter}:${rel.target_verse}`,
-              book: rel.target_book,
-              chapter: rel.target_chapter,
-              verse: rel.target_verse,
-            },
-            sourcePosition: Position.Right,
-            targetPosition: Position.Left,
-            style: {
-              ...nodeStyle,
-              background: getNodeColor(rel.target_book),
-            },
-          }
-          newNodes.push(newNode)
-        }
+        const relationships: GraphData[] = await response.json()
+        console.log(`Received ${relationships.length} relationships for ${nodeId}`)
 
-        // Add edge with enhanced styling for expanded connections
-        const edgeId = createUniqueEdgeId(nodeId, targetId)
-        if (!flowEdges.some(e => e.id === edgeId) && !newEdges.some(e => e.id === edgeId)) {
-          newEdges.push({
-            id: edgeId,
-            source: nodeId,
-            target: targetId,
-            type: 'smoothstep', // Smoother curves for better visibility
-            animated: true, // Add animation for better visibility
-            style: expandedEdgeStyle,
-            data: { 
-              isExpansionEdge: true,
-              label: 'Reference', // Add a label to show this is a reference connection
-              sourceVerse: `${book} ${chapter}:${verse}`,
-              targetVerse: `${rel.target_book} ${rel.target_chapter}:${rel.target_verse}`,
-              relationship: 'Cross-reference' // Set a default relationship type
-            },
-            markerEnd: {
-              type: MarkerType.ArrowClosed, // Add a more prominent arrow
-              width: 15,
-              height: 15,
-              color: theme.colors.primary[500]
-            },
-            // Show edge text on hover
-            label: '→',
-            labelStyle: { 
-              fill: theme.colors.primary[700], 
-              fontWeight: 'bold',
-              fontSize: 14
-            },
-            labelBgStyle: { 
-              fill: 'white', 
-              fillOpacity: 0.8,
-              borderRadius: 4
+        // Calculate optimal positions for new nodes
+        const positions = calculateOptimalLayout(clickedNode, relationships.length, flowNodes)
+
+        // Create new nodes and edges
+        const newNodes: BibleNode[] = []
+        const newEdges: Edge[] = []
+        const existingNodeIds = new Set(flowNodes.map(n => n.id))
+
+        relationships.forEach((rel, index) => {
+          const targetId = `${rel.target_book}-${rel.target_chapter}-${rel.target_verse}`
+          
+          // Only add new nodes if they don't exist
+          if (!existingNodeIds.has(targetId)) {
+            const newNode: BibleNode = {
+              id: targetId,
+              type: 'default',
+              position: positions[index],
+              data: {
+                label: `${rel.target_book} ${rel.target_chapter}:${rel.target_verse}`,
+                book: rel.target_book,
+                chapter: rel.target_chapter,
+                verse: rel.target_verse,
+              },
+              sourcePosition: Position.Right,
+              targetPosition: Position.Left,
+              style: {
+                ...nodeStyle,
+                background: getNodeColor(rel.target_book),
+              },
             }
-          })
-        }
-      })
+            newNodes.push(newNode)
+          }
 
-      // Update state
-      setFlowNodes(nodes => [...nodes, ...newNodes])
-      setFlowEdges(edges => [...edges, ...newEdges])
-      setExpandedNodes(new Set([...expandedNodesArray, nodeId]))
-
-      // Center the view on the expanded area with a smoother transition
-      if (reactFlowInstance) {
-        // Calculate the bounding box of all visible nodes
-        const visibleNodes = [...flowNodes, ...newNodes].filter(node => {
-          const isExpanded = expandedNodes.has(node.id)
-          const isNewlyExpanded = node.id === nodeId
-          const isRelated = newEdges.some(e => 
-            e.source === node.id || e.target === node.id
-          )
-          return isExpanded || isNewlyExpanded || isRelated
+          // Add edge with enhanced styling for expanded connections
+          const edgeId = createUniqueEdgeId(nodeId, targetId)
+          if (!flowEdges.some(e => e.id === edgeId) && !newEdges.some(e => e.id === edgeId)) {
+            newEdges.push({
+              id: edgeId,
+              source: nodeId,
+              target: targetId,
+              type: 'smoothstep',
+              animated: true,
+              style: expandedEdgeStyle,
+              data: { 
+                isExpansionEdge: true,
+                label: 'Reference',
+                sourceVerse: `${book} ${chapter}:${verse}`,
+                targetVerse: `${rel.target_book} ${rel.target_chapter}:${rel.target_verse}`,
+                relationship: 'Cross-reference'
+              },
+              markerEnd: {
+                type: MarkerType.Arrow,
+                width: 10,
+                height: 10,
+                color: theme.colors.primary[500]
+              },
+              label: '→',
+              labelStyle: { 
+                fill: theme.colors.primary[700], 
+                fontWeight: 'bold',
+                fontSize: 14
+              },
+              labelBgStyle: { 
+                fill: 'white', 
+                fillOpacity: 0.8,
+                borderRadius: 4
+              }
+            })
+          }
         })
 
-        if (visibleNodes.length > 0) {
-          const xCoords = visibleNodes.map(n => n.position.x)
-          const yCoords = visibleNodes.map(n => n.position.y)
-          const minX = Math.min(...xCoords)
-          const maxX = Math.max(...xCoords)
-          const minY = Math.min(...yCoords)
-          const maxY = Math.max(...yCoords)
-          const centerX = (minX + maxX) / 2
-          const centerY = (minY + maxY) / 2
+        // Update state
+        setFlowNodes(nodes => [...nodes, ...newNodes])
+        setFlowEdges(edges => [...edges, ...newEdges])
+        setExpandedNodes(new Set([...expandedNodesArray, nodeId]))
 
-          reactFlowInstance.setCenter(centerX, centerY, { 
-            duration: 800,
-            zoom: Math.min(1, 800 / Math.max(maxX - minX, maxY - minY))
-          })
+        // After loading is complete, zoom out slightly to show surrounding nodes
+        // This happens with a delay to ensure the user first sees the focus on the clicked node
+        if (reactFlowInstance && newNodes.length > 0) {
+          setTimeout(() => {
+            // Calculate the appropriate zoom level based on the number of new nodes
+            const zoomLevel = Math.max(0.8, 1.2 - (newNodes.length * 0.02));
+            
+            reactFlowInstance.setCenter(
+              clickedNode.position.x, 
+              clickedNode.position.y, 
+              { 
+                duration: 800, 
+                zoom: zoomLevel 
+              }
+            );
+          }, 600);
         }
+      } finally {
+        // Remove loading indicator
+        setLoadingVerses(prev => {
+          const next = new Set(prev);
+          next.delete(nodeId);
+          return next;
+        });
       }
     } catch (err) {
       console.error('Error handling node double click:', err)
       setError('Failed to load verse relationships')
     }
-  }, [expandedNodes, flowNodes, reactFlowInstance, calculateOptimalLayout, expandedEdgeStyle])
+  }, [expandedNodes, flowNodes, reactFlowInstance, calculateOptimalLayout, expandedEdgeStyle, setLoadingVerses])
 
   // Add event handler for edge mouse enter/leave to show edge data
   const onEdgeMouseEnter = useCallback((event: React.MouseEvent, edge: Edge) => {
@@ -639,7 +654,10 @@ function BibleGraphContent({ selectedVerse }: BibleGraphProps) {
             )
           })
         
-        // Update node style based on connection and expansion status
+        // Check if this is the focused verse (last focused verse)
+        const isFocused = node.id === lastFocusedVerseId;
+        
+        // Update node style based on connection, expansion status, and focus status
         return {
           ...node,
           hidden: !(isConnected || isExpanded) || !matchesSearch,
@@ -657,6 +675,9 @@ function BibleGraphContent({ selectedVerse }: BibleGraphProps) {
               : expandedNodes.has(node.id)
                 ? theme.colors.primary[50]
                 : getNodeColor(node.data.book),
+            // Add highlight styles for focused node
+            boxShadow: isFocused ? '0 0 15px rgba(59, 130, 246, 0.7)' : node.style?.boxShadow,
+            zIndex: isFocused ? 1000 : node.style?.zIndex || 'auto',
           },
         }
       }
@@ -678,7 +699,7 @@ function BibleGraphContent({ selectedVerse }: BibleGraphProps) {
         },
       }
     })
-  }, [flowNodes, searchTerm, selectedBook, selectedVerse, flowEdges, expandedNodes])
+  }, [flowNodes, searchTerm, selectedBook, selectedVerse, flowEdges, expandedNodes, lastFocusedVerseId])
 
   // Filter and style edges based on visible nodes and selection
   const filteredEdges = useMemo(() => {
@@ -711,6 +732,12 @@ function BibleGraphContent({ selectedVerse }: BibleGraphProps) {
               ...expandedEdgeStyle,
               opacity: 1,
             },
+            markerEnd: {
+              type: MarkerType.Arrow,
+              width: 10,
+              height: 10,
+              color: theme.colors.primary[500]
+            },
           };
         }
 
@@ -723,6 +750,12 @@ function BibleGraphContent({ selectedVerse }: BibleGraphProps) {
             style: selectedVerseEdgeStyle,
             // Add hover interactivity for edge text
             interactionWidth: 10, // Wider area for mouse interaction
+            markerEnd: {
+              type: MarkerType.Arrow,
+              width: 10,
+              height: 10,
+              color: '#db9004'
+            },
           }
         }
 
@@ -736,6 +769,11 @@ function BibleGraphContent({ selectedVerse }: BibleGraphProps) {
             strokeWidth: isConnected ? 3 : 1,
             stroke: isConnected ? theme.colors.gray[400] : theme.colors.gray[400],
           },
+          markerEnd: {
+            ...defaultEdgeOptions.markerEnd,
+            color: isConnected ? theme.colors.gray[400] : theme.colors.gray[400],
+            opacity: isConnected ? 1 : 0.1,
+          },
         }
       }
 
@@ -747,6 +785,12 @@ function BibleGraphContent({ selectedVerse }: BibleGraphProps) {
           animated: true,
           type: 'straight',
           style: expandedEdgeStyle,
+          markerEnd: {
+            type: MarkerType.Arrow,
+            width: 10,
+            height: 10,
+            color: theme.colors.primary[500]
+          },
         };
       }
 
@@ -909,41 +953,104 @@ function BibleGraphContent({ selectedVerse }: BibleGraphProps) {
     setUserHasNavigated(true);
   }, []);
 
-  // Effect to handle selected verse changes
+  // Separate function to apply highlighting animation to a node - define this first
+  const applyNodeHighlight = useCallback((nodeId: string) => {
+    // First phase - apply highlight effect
+    setFlowNodes(nodes => 
+      nodes.map(n => {
+        if (n.id === nodeId) {
+          return {
+            ...n,
+            style: {
+              ...n.style,
+              boxShadow: '0 0 20px rgba(59, 130, 246, 0.8)',
+              transform: 'scale(1.05)',
+              zIndex: 1000,
+              transition: 'all 0.3s ease'
+            }
+          };
+        }
+        return n;
+      })
+    );
+    
+    // Second phase - reset after animation
+    setTimeout(() => {
+      setFlowNodes(nodes => 
+        nodes.map(n => {
+          if (n.id === nodeId) {
+            return {
+              ...n,
+              style: {
+                ...n.style,
+                boxShadow: n.style?.boxShadow,
+                transform: 'scale(1)',
+                zIndex: 10,
+                transition: 'all 0.5s ease'
+              }
+            };
+          }
+          return n;
+        })
+      );
+    }, 1000);
+  }, [setFlowNodes]);
+
+  // Add a new function to handle focusing on a verse node - now applyNodeHighlight is defined before this
+  const focusOnSelectedVerse = useCallback((verseId: string) => {
+    // Find the node corresponding to the verse
+    const node = flowNodes.find(n => n.id === verseId);
+    
+    if (node && reactFlowInstance && verseId !== lastFocusedVerseId) {
+      // Always force focus on the selected verse with a slightly zoomed in view
+      reactFlowInstance.setCenter(
+        node.position.x, 
+        node.position.y, 
+        { 
+          duration: 800,
+          zoom: 1.2 // Slightly zoom in for better visibility
+        }
+      );
+      
+      // Remember we've focused on this verse
+      setLastFocusedVerseId(verseId);
+      
+      console.log(`Focused on verse: ${verseId}`);
+    } else if (!node) {
+      console.log(`Could not find node for verse: ${verseId}`);
+    }
+  }, [flowNodes, reactFlowInstance, lastFocusedVerseId, setLastFocusedVerseId]);
+
+  // Update the dependency array in the useEffect to include the new focusOnSelectedVerse function
   useEffect(() => {
     if (!selectedVerse || !isInitialized) return
 
     const { book, chapter, verse } = selectedVerse
     const verseId = `${book}-${chapter}-${verse}`
     
+    // Prevent repeat focusing on the same verse
+    if (verseId === lastFocusedVerseId) {
+      return;
+    }
+    
     // Check if the verse exists in current data
     if (!verseExistsInGraph(book, chapter, verse) && !loadingVerses.has(verseId)) {
       // Load additional data if verse not found and not currently loading
-      loadAdditionalData(book, chapter, verse)
-    }
-
-    // Only center the view if:
-    // 1. This is a different verse than the last focused one, AND
-    // 2. The user hasn't manually navigated yet
-    if (verseId !== lastFocusedVerseId && !userHasNavigated) {
-      const node = flowNodes.find(n => n.id === verseId)
-      if (node && reactFlowInstance) {
-        // Focus on the verse
-        reactFlowInstance.setCenter(node.position.x, node.position.y, { 
-          duration: 800,
-          zoom: reactFlowInstance.getZoom() // maintain current zoom level
-        });
-        
-        // Remember we've focused on this verse
-        setLastFocusedVerseId(verseId);
-        // Reset the user navigation flag when we focus on a new verse
-        setUserHasNavigated(false);
-        
-        console.log(`Focused on verse: ${verseId}`);
-      }
+      loadAdditionalData(book, chapter, verse).then(() => {
+        // Only focus if we haven't already focused on a different verse
+        const currentSelectedVerseId = selectedVerse ? 
+          `${selectedVerse.book}-${selectedVerse.chapter}-${selectedVerse.verse}` : null;
+          
+        if (currentSelectedVerseId === verseId && verseId !== lastFocusedVerseId) {
+          focusOnSelectedVerse(verseId);
+        }
+      });
+    } else if (verseId !== lastFocusedVerseId) {
+      // If the verse already exists and we haven't focused on it yet, focus on it immediately
+      focusOnSelectedVerse(verseId);
     }
   }, [selectedVerse, isInitialized, verseExistsInGraph, loadAdditionalData, 
-      loadingVerses, flowNodes, reactFlowInstance, lastFocusedVerseId, userHasNavigated]);
+      loadingVerses, focusOnSelectedVerse, lastFocusedVerseId]);
 
   if (loading) {
     return <div className="flex items-center justify-center h-screen">Loading graph data...</div>
