@@ -7,11 +7,13 @@ import { useParams } from 'next/navigation';
 import { useAuth } from '../contexts/AuthContext';
 import { FiMenu, FiX, FiBook, FiUser, FiLogIn, FiLogOut, FiHome, FiFileText } from 'react-icons/fi';
 import { useTranslations } from 'next-intl';
+import { defaultLocale } from '../i18n/config';
 
 export default function MainNavigation() {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const pathname = usePathname();
-  const { locale } = useParams() as { locale: string };
+  const params = useParams();
+  const locale = (params?.locale as string) || defaultLocale;
   const { isAuthenticated, user, logout } = useAuth();
   const t = useTranslations();
 

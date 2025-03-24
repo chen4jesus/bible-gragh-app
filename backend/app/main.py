@@ -564,14 +564,18 @@ async def get_verse_knowledge_cards(
     book: str, 
     chapter: int, 
     verse: int,
-    current_user: Optional[dict] = Depends(get_current_user)
+    current_user: dict = Depends(get_current_user)
 ):
+    """
+    Get knowledge cards for a specific verse.
+    Protected endpoint - requires authentication.
+    """
     with driver.session() as session:
-        # Get cards created by the current user and public cards created by others
+        # Get ONLY cards created by the current user (remove the public card access)
         query = """
         MATCH (k:KnowledgeCard)-[:REFERENCES]->(v:Verse {book: $book, chapter: $chapter, verse: $verse})
         MATCH (u:User)-[:CREATED]->(k)
-        WHERE u.id = $user_id OR k.is_public = true
+        WHERE u.id = $user_id
         RETURN k, u.username as creator_username, v.book as verse_book, v.chapter as verse_chapter, v.verse as verse_verse
         ORDER BY k.created_at DESC
         """
@@ -581,7 +585,7 @@ async def get_verse_knowledge_cards(
             book=book,
             chapter=chapter,
             verse=verse,
-            user_id=current_user["id"] if current_user else ""
+            user_id=current_user["id"]
         )
         
         cards = []
@@ -642,8 +646,21 @@ async def get_graph_data(
     chapter: Optional[int] = Query(None, description="Filter by chapter number"),
     verse: Optional[int] = Query(None, description="Filter by verse number"),
     include_knowledge_cards: bool = Query(False, description="Include knowledge cards in the graph data"),
-    limit: Optional[int] = Query(100, description="Limit the number of results")
+    limit: Optional[int] = Query(100, description="Limit the number of results"),
+    current_user: Optional[dict] = Depends(get_current_user) if Query(False, alias="include_knowledge_cards") else None
 ):
+    """
+    Get graph data for Bible visualization.
+    When include_knowledge_cards is true, authentication is required.
+    """
+    # Check if authentication is required but user is not authenticated
+    if include_knowledge_cards and current_user is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required when including knowledge cards",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+        
     with driver.session() as session:
         # First, check if we have any verses
         verse_count = session.run(
@@ -736,6 +753,10 @@ async def get_graph_data(
             if verse:
                 kc_where_clauses.append("v.verse = $verse")
                 kc_params["verse"] = verse
+                
+            # Add user filter to only include cards created by the current user
+            kc_where_clauses.append("u.id = $user_id")
+            kc_params["user_id"] = current_user["id"]
             
             if kc_where_clauses:
                 kc_query += "\nWHERE " + " AND ".join(kc_where_clauses)
@@ -772,16 +793,18 @@ async def get_knowledge_graph(
     chapter: Optional[int] = Query(None, description="Filter by chapter number"),
     verse: Optional[int] = Query(None, description="Filter by verse number"),
     depth: int = Query(2, description="Depth of relationships to traverse"),
-    limit: Optional[int] = Query(100, description="Limit the number of results")
+    limit: Optional[int] = Query(100, description="Limit the number of results"),
+    current_user: dict = Depends(get_current_user)
 ):
     """
     Get a knowledge graph that includes verses, knowledge cards, and their relationships.
     This creates a more comprehensive graph visualization than the basic graph-data endpoint.
+    Protected endpoint - requires authentication.
     """
     with driver.session() as session:
         # Define the starting point based on filters
         start_query_parts = []
-        params = {"limit": limit, "depth": depth}
+        params = {"limit": limit, "depth": depth, "user_id": current_user["id"]}
         
         if book:
             start_query_parts.append("v.book = $book")
@@ -811,6 +834,7 @@ async def get_knowledge_graph(
             WITH v
             MATCH (k:KnowledgeCard)-[:REFERENCES]->(v)
             MATCH (u:User)-[:CREATED]->(k)
+            WHERE u.id = $user_id
             RETURN k as related, 'knowledge_card' as connection_type, k as knowledge_card
         }}
         RETURN v as source_node, related as target_node, connection_type, knowledge_card

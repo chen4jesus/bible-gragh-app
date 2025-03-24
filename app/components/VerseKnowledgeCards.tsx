@@ -18,10 +18,17 @@ export default function VerseKnowledgeCards({ book, chapter, verse, verseText }:
   const [cards, setCards] = useState<KnowledgeCardType[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, user } = useAuth();
   const t = useTranslations('knowledgeCards');
 
   const fetchCards = useCallback(async () => {
+    // Skip fetching if not authenticated
+    if (!isAuthenticated) {
+      setLoading(false);
+      setCards([]);
+      return;
+    }
+    
     setLoading(true);
     setError(null);
     try {
@@ -33,11 +40,11 @@ export default function VerseKnowledgeCards({ book, chapter, verse, verseText }:
     } finally {
       setLoading(false);
     }
-  }, [book, chapter, verse, t]);
+  }, [book, chapter, verse, t, isAuthenticated]);
 
   useEffect(() => {
     fetchCards();
-  }, [fetchCards]);
+  }, [fetchCards, isAuthenticated]); // Re-fetch when auth state changes
 
   const handleCardDeleted = useCallback((cardId: string) => {
     // Optimistic update
@@ -57,6 +64,11 @@ export default function VerseKnowledgeCards({ book, chapter, verse, verseText }:
 
   const handleRetry = () => {
     fetchCards();
+  };
+  
+  const handleLogin = () => {
+    // Redirect to login page
+    window.location.href = '/login';
   };
 
   if (loading) {
@@ -78,6 +90,23 @@ export default function VerseKnowledgeCards({ book, chapter, verse, verseText }:
             className="px-3 py-1 bg-red-100 text-red-700 rounded-md hover:bg-red-200 transition-colors text-sm"
           >
             {t('retry')}
+          </button>
+        </div>
+      </div>
+    );
+  }
+  
+  if (!isAuthenticated) {
+    return (
+      <div className="mt-6 space-y-4">
+        <h3 className="text-lg font-medium text-gray-900">{t('title')}</h3>
+        <div className="p-4 border border-yellow-200 bg-yellow-50 rounded-md">
+          <p className="text-sm text-yellow-700 mb-2">{t('authRequired')}</p>
+          <button
+            onClick={handleLogin}
+            className="px-3 py-1 bg-yellow-100 text-yellow-800 rounded-md hover:bg-yellow-200 transition-colors text-sm"
+          >
+            {t('loginToView')}
           </button>
         </div>
       </div>

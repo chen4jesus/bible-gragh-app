@@ -1,10 +1,10 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { KnowledgeCard as KnowledgeCardType } from '../api/bibleApi';
 import { useAuth } from '../contexts/AuthContext';
 import { bibleApi } from '../api/bibleApi';
-import { FiEdit2, FiTrash2, FiSave, FiX, FiAlertCircle } from 'react-icons/fi';
+import { FiEdit2, FiTrash2, FiSave, FiX, FiAlertCircle, FiMinimize2, FiMaximize2 } from 'react-icons/fi';
 import { useTranslations } from 'next-intl';
 
 interface KnowledgeCardProps {
@@ -16,6 +16,10 @@ interface KnowledgeCardProps {
 export default function KnowledgeCard({ card, onDelete, onUpdate }: KnowledgeCardProps) {
   const { user } = useAuth();
   const [isEditing, setIsEditing] = useState(false);
+  const [isMinimized, setIsMinimized] = useState(false);
+  const [originalHeight, setOriginalHeight] = useState<string | null>(null);
+  const [originalWidth, setOriginalWidth] = useState<string | null>(null);
+  const cardRef = useRef<HTMLElement>(null);
   const [editData, setEditData] = useState({
     title: card.title,
     content: card.content,
@@ -35,6 +39,15 @@ export default function KnowledgeCard({ card, onDelete, onUpdate }: KnowledgeCar
     reflection: 'border-yellow-300 bg-yellow-50',
     question: 'border-green-300 bg-green-50',
   }[card.type] || 'border-gray-300 bg-gray-50';
+  
+  const handleMinimize = () => {
+    if (!isMinimized && cardRef.current) {
+      // Save current dimensions before minimizing
+      setOriginalHeight(cardRef.current.style.height);
+      setOriginalWidth(cardRef.current.style.width);
+    }
+    setIsMinimized(!isMinimized);
+  };
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
@@ -104,7 +117,11 @@ export default function KnowledgeCard({ card, onDelete, onUpdate }: KnowledgeCar
 
   if (isEditing) {
     return (
-      <div className={`border p-4 rounded-lg mb-4 shadow-sm ${cardTypeColor}`} aria-label={t('editingCard')}>
+      <div 
+        className={`border p-4 rounded-lg mb-4 shadow-sm ${cardTypeColor} resize overflow-auto min-h-[120px] min-w-[250px]`} 
+        style={{ resize: 'both' }}
+        aria-label={t('editingCard')}
+      >
         {error && (
           <div className="mb-4 p-3 bg-red-50 border border-red-100 rounded-md flex items-start" role="alert">
             <FiAlertCircle className="text-red-500 mt-0.5 mr-2 flex-shrink-0" />
@@ -198,57 +215,78 @@ export default function KnowledgeCard({ card, onDelete, onUpdate }: KnowledgeCar
   }
 
   return (
-    <article className={`border p-4 rounded-lg mb-4 shadow-sm ${cardTypeColor}`}>
+    <article 
+      ref={cardRef}
+      className={`border p-4 rounded-lg mb-4 shadow-sm ${cardTypeColor} ${isMinimized ? '' : 'resize overflow-auto'} min-w-[250px] transition-all duration-300`}
+      style={{ 
+        resize: isMinimized ? 'none' : 'both',
+        height: isMinimized ? '50px' : originalHeight || '',
+        overflow: isMinimized ? 'hidden' : 'auto',
+      }}
+    >
       <div className="flex justify-between items-start mb-2">
         <h3 className="text-lg font-medium">{card.title}</h3>
-        {isOwner && (
-          <div className="flex space-x-2">
-            <button
-              onClick={() => setIsEditing(true)}
-              className="p-1 text-gray-600 hover:text-blue-500"
-              aria-label={t('actions.edit')}
-            >
-              <FiEdit2 size={16} />
-            </button>
-            <button
-              onClick={handleDelete}
-              disabled={isDeleting}
-              className="p-1 text-gray-600 hover:text-red-500 disabled:opacity-50 disabled:cursor-not-allowed"
-              aria-label={t('actions.delete')}
-              aria-busy={isDeleting}
-            >
-              <FiTrash2 size={16} />
-            </button>
+        <div className="flex space-x-2">
+          <button
+            onClick={handleMinimize}
+            className="p-1 text-gray-600 hover:text-blue-500"
+            aria-label={isMinimized ? 'Maximize' : 'Minimize'}
+          >
+            {isMinimized ? <FiMaximize2 size={16} /> : <FiMinimize2 size={16} />}
+          </button>
+          {isOwner && (
+            <>
+              <button
+                onClick={() => setIsEditing(true)}
+                className="p-1 text-gray-600 hover:text-blue-500"
+                aria-label={t('actions.edit')}
+              >
+                <FiEdit2 size={16} />
+              </button>
+              <button
+                onClick={handleDelete}
+                disabled={isDeleting}
+                className="p-1 text-gray-600 hover:text-red-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                aria-label={t('actions.delete')}
+                aria-busy={isDeleting}
+              >
+                <FiTrash2 size={16} />
+              </button>
+            </>
+          )}
+        </div>
+      </div>
+
+      {!isMinimized && (
+        <>
+          {error && (
+            <div className="mb-3 p-2 bg-red-50 border border-red-100 rounded-md flex items-start" role="alert">
+              <FiAlertCircle className="text-red-500 mt-0.5 mr-2 flex-shrink-0" />
+              <span className="text-sm text-red-700">{error}</span>
+            </div>
+          )}
+
+          <div className="text-gray-700 mb-3 whitespace-pre-line">{card.content}</div>
+
+          {card.tags.length > 0 && (
+            <div className="flex flex-wrap gap-1 mb-2">
+              {card.tags.map((tag, index) => (
+                <span
+                  key={index}
+                  className="inline-block bg-gray-200 rounded-full px-2 py-1 text-xs text-gray-700"
+                >
+                  {tag}
+                </span>
+              ))}
+            </div>
+          )}
+
+          <div className="text-xs text-gray-500 flex justify-between mt-2">
+            <span className="capitalize">{t(`types.${card.type}`)}</span>
+            <span>{t('updated')}: {formatDate(card.updated_at)}</span>
           </div>
-        )}
-      </div>
-
-      {error && (
-        <div className="mb-3 p-2 bg-red-50 border border-red-100 rounded-md flex items-start" role="alert">
-          <FiAlertCircle className="text-red-500 mt-0.5 mr-2 flex-shrink-0" />
-          <span className="text-sm text-red-700">{error}</span>
-        </div>
+        </>
       )}
-
-      <div className="text-gray-700 mb-3 whitespace-pre-line">{card.content}</div>
-
-      {card.tags.length > 0 && (
-        <div className="flex flex-wrap gap-1 mb-2">
-          {card.tags.map((tag, index) => (
-            <span
-              key={index}
-              className="inline-block bg-gray-200 rounded-full px-2 py-1 text-xs text-gray-700"
-            >
-              {tag}
-            </span>
-          ))}
-        </div>
-      )}
-
-      <div className="text-xs text-gray-500 flex justify-between mt-2">
-        <span className="capitalize">{t(`types.${card.type}`)}</span>
-        <span>{t('updated')}: {formatDate(card.updated_at)}</span>
-      </div>
     </article>
   );
-} 
+}

@@ -27,7 +27,40 @@
     "collapseConnections": "折叠节点连接",
     "edgeInfo": "引用: {type}",
     "showKnowledgeCards": "显示知识卡片",
-    "searchPlaceholder": "搜索经文..."
+    "searchPlaceholder": "搜索经文"
+  },
+  "verse": {
+    "loading": "加载经文中...",
+    "notFound": "未找到经文",
+    "actions": {
+      "back": "返回",
+      "viewInGraph": "在图谱中查看"
+    },
+    "errors": {
+      "invalidReference": "无效的经文引用",
+      "loadFailed": "加载经文失败，请稍后再试。"
+    }
+  },
+  "knowledgeCards": {
+    "title": "我的知识卡片",
+    "noCards": "您还没有创建任何知识卡片。",
+    "loading": "正在加载您的知识卡片...",
+    "retry": "重试",
+    "authRequired": "请登录以查看您的知识卡片。",
+    "loginToView": "登录查看",
+    "searchPlaceholder": "搜索您的笔记...",
+    "startExploring": "开始探索圣经图谱并为经文添加笔记！",
+    "goToBibleGraph": "前往圣经图谱",
+    "filters": {
+      "allTypes": "所有类型",
+      "notes": "笔记",
+      "commentary": "注释",
+      "reflection": "反思",
+      "questions": "问题"
+    },
+    "errors": {
+      "fetchFailed": "加载您的知识卡片失败，请稍后再试。"
+    }
   },
   "readingPanel": {
     "title": "圣经文本",
@@ -46,15 +79,6 @@
     "chapter": "章",
     "verse": "节",
     "add": "添加到图表"
-  },
-  "knowledgeCards": {
-    "title": "知识卡片",
-    "noCards": "此经文尚无知识卡片。",
-    "loading": "加载知识卡片中...",
-    "retry": "重试",
-    "errors": {
-      "fetchFailed": "加载知识卡片失败，请重试。"
-    }
   },
   "knowledgeCard": {
     "editingCard": "编辑知识卡片",
@@ -147,7 +171,9 @@
       "registrationFailed": "注册失败，请重试。"
     }
   },
-  "All Books": "所有书卷",
-  "Show Knowledge Cards": "显示知识卡片",
-  "Search verses...": "搜索经文..."
+  "common": {
+    "allBooks": "所有书卷",
+    "showKnowledgeCards": "显示知识卡片",
+    "searchVerses": "搜索经文"
+  }
 } 

@@ -5,12 +5,22 @@ import { useParams } from 'next/navigation';
 import { bibleApi, VerseData } from '../../../../../api/bibleApi';
 import { Card } from '../../../../../components/ui/Card';
 import VerseKnowledgeCards from '../../../../../components/VerseKnowledgeCards';
+import Link from 'next/link';
+import { defaultLocale } from '../../../../../i18n/config';
+import { useTranslations } from 'next-intl';
 
 export default function VersePage() {
   const params = useParams();
   const [verse, setVerse] = useState<VerseData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const locale = (params?.locale as string) || defaultLocale;
+  const t = useTranslations('verse');
+
+  // Function to create localized paths
+  const getLocalePath = (path: string) => {
+    return path === '/' ? `/${locale}` : `/${locale}${path}`;
+  };
 
   useEffect(() => {
     const fetchVerse = async () => {
@@ -26,23 +36,23 @@ export default function VersePage() {
           const data = await bibleApi.getVerse(book, chapter, verse);
           setVerse(data);
         } else {
-          setError('Invalid verse reference');
+          setError(t('errors.invalidReference'));
         }
       } catch (err: any) {
         console.error('Failed to fetch verse:', err);
-        setError('Failed to load verse. Please try again later.');
+        setError(t('errors.loadFailed'));
       } finally {
         setLoading(false);
       }
     };
 
     fetchVerse();
-  }, [params.book, params.chapter, params.verse]);
+  }, [params.book, params.chapter, params.verse, t]);
 
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
-        <p className="text-gray-600">Loading verse...</p>
+        <p className="text-gray-600">{t('loading')}</p>
       </div>
     );
   }
@@ -58,7 +68,7 @@ export default function VersePage() {
   if (!verse) {
     return (
       <div className="flex items-center justify-center min-h-screen">
-        <p className="text-gray-600">Verse not found</p>
+        <p className="text-gray-600">{t('notFound')}</p>
       </div>
     );
   }
@@ -76,14 +86,14 @@ export default function VersePage() {
             className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition"
             onClick={() => window.history.back()}
           >
-            Back
+            {t('actions.back')}
           </button>
-          <a 
-            href={`/graph?verse=${verse.book}-${verse.chapter}-${verse.verse}`}
+          <Link 
+            href={getLocalePath(`/graph?verse=${verse.book}-${verse.chapter}-${verse.verse}`)}
             className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 transition"
           >
-            View in Graph
-          </a>
+            {t('actions.viewInGraph')}
+          </Link>
         </div>
       </Card>
       

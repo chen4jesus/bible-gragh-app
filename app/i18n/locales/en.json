@@ -27,7 +27,40 @@
     "collapseConnections": "Collapse Node Connections",
     "edgeInfo": "Reference: {type}",
     "showKnowledgeCards": "Show Knowledge Cards",
-    "searchPlaceholder": "Search verses..."
+    "searchPlaceholder": "Search verses"
+  },
+  "verse": {
+    "loading": "Loading verse...",
+    "notFound": "Verse not found",
+    "actions": {
+      "back": "Back",
+      "viewInGraph": "View in Graph"
+    },
+    "errors": {
+      "invalidReference": "Invalid verse reference",
+      "loadFailed": "Failed to load verse. Please try again later."
+    }
+  },
+  "knowledgeCards": {
+    "title": "My Knowledge Cards",
+    "noCards": "You haven't created any knowledge cards yet.",
+    "loading": "Loading your knowledge cards...",
+    "retry": "Try Again",
+    "authRequired": "Please log in to view your knowledge cards.",
+    "loginToView": "Login to View",
+    "searchPlaceholder": "Search in your notes...",
+    "startExploring": "Start by exploring verses in the Bible Graph and adding notes to verses!",
+    "goToBibleGraph": "Go to Bible Graph",
+    "filters": {
+      "allTypes": "All Types",
+      "notes": "Notes",
+      "commentary": "Commentary",
+      "reflection": "Reflection",
+      "questions": "Questions"
+    },
+    "errors": {
+      "fetchFailed": "Failed to load your knowledge cards. Please try again later."
+    }
   },
   "readingPanel": {
     "title": "Bible Text",
@@ -46,15 +79,6 @@
     "chapter": "Chapter",
     "verse": "Verse",
     "add": "Add to Graph"
-  },
-  "knowledgeCards": {
-    "title": "Knowledge Cards",
-    "noCards": "No knowledge cards found for this verse.",
-    "loading": "Loading knowledge cards...",
-    "retry": "Try Again",
-    "errors": {
-      "fetchFailed": "Failed to load knowledge cards. Please try again."
-    }
   },
   "knowledgeCard": {
     "editingCard": "Editing knowledge card",
@@ -147,7 +171,9 @@
       "registrationFailed": "Registration failed. Please try again."
     }
   },
-  "All Books": "All Books",
-  "Show Knowledge Cards": "Show Knowledge Cards",
-  "Search verses...": "Search verses..."
+  "common": {
+    "allBooks": "All Books",
+    "showKnowledgeCards": "Show Knowledge Cards",
+    "searchVerses": "Search verses"
+  }
 } 

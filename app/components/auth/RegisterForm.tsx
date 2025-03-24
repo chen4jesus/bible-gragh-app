@@ -5,6 +5,9 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '../../contexts/AuthContext';
 import { useTranslations } from 'next-intl';
 import { FiUser, FiMail, FiLock, FiAlertCircle } from 'react-icons/fi';
+import { useParams } from 'next/navigation';
+import { defaultLocale } from '../../i18n/config';
+import Link from 'next/link';
 
 export default function RegisterForm() {
   const [formData, setFormData] = useState({
@@ -18,6 +21,13 @@ export default function RegisterForm() {
   const { register } = useAuth();
   const router = useRouter();
   const t = useTranslations('auth');
+  const params = useParams();
+  const locale = (params?.locale as string) || defaultLocale;
+
+  // Function to create localized paths
+  const getLocalePath = (path: string) => {
+    return path === '/' ? `/${locale}` : `/${locale}${path}`;
+  };
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
@@ -55,7 +65,7 @@ export default function RegisterForm() {
         email: formData.email,
         password: formData.password,
       });
-      router.push('/');
+      router.push(getLocalePath('/'));
     } catch (error: any) {
       console.error('Registration error:', error);
       if (error.response?.data?.detail) {
@@ -202,7 +212,7 @@ export default function RegisterForm() {
         
         <div className="text-center mt-4">
           <p className="text-sm text-gray-600">
-            {t('alreadyHaveAccount')} <a href="/login" className="font-medium text-blue-600 hover:text-blue-500">{t('loginHere')}</a>
+            {t('alreadyHaveAccount')} <Link href={getLocalePath('/login')} className="font-medium text-blue-600 hover:text-blue-500">{t('loginHere')}</Link>
           </p>
         </div>
       </form>

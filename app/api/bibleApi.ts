@@ -298,12 +298,41 @@ export const bibleApi = {
    * @returns Promise with filtered graph data
    * @throws Error if the API request fails
    */
-  async getFilteredGraphData(book?: string, chapter?: number, verse?: number, limit: number = 100): Promise<GraphData[]> {
+  async getFilteredGraphData(
+    book?: string, 
+    chapter?: number, 
+    verse?: number, 
+    limit: number = 100,
+    includeKnowledgeCards: boolean = false
+  ): Promise<GraphData[]> {
     try {
-      const url = ENDPOINTS.GRAPH_DATA_WITH_PARAMS(book, chapter, verse, false, limit);
-      const response = await apiClient.get<GraphData[]>(url);
-      return response.data;
+      // Check if we need authentication for knowledge cards
+      if (includeKnowledgeCards) {
+        const token = localStorage.getItem('bibleGraph_token');
+        if (!token) {
+          console.log('Authentication required to include knowledge cards');
+          // Fall back to non-knowledge card version
+          includeKnowledgeCards = false;
+        }
+      }
+      
+      const url = ENDPOINTS.GRAPH_DATA_WITH_PARAMS(book, chapter, verse, includeKnowledgeCards, limit);
+      const response = await apiClient.get<GraphData[] | { verse_connections: GraphData[], knowledge_card_connections: any[] }>(url);
+      
+      if (Array.isArray(response.data)) {
+        return response.data;
+      } else {
+        // Combined format with verse_connections and knowledge_card_connections
+        return response.data.verse_connections;
+      }
     } catch (error) {
+      // Handle authentication errors for knowledge cards
+      if (axios.isAxiosError(error) && error.response?.status === 401 && includeKnowledgeCards) {
+        console.log('Authentication required to include knowledge cards');
+        // Retry without knowledge cards
+        return this.getFilteredGraphData(book, chapter, verse, limit, false);
+      }
+      
       console.error('Error fetching filtered graph data:', error);
       throw error;
     }
@@ -447,11 +476,32 @@ export const bibleApi = {
     }
   },
 
+  /**
+   * Fetch knowledge cards for a specific verse
+   * 
+   * @param book - Bible book name
+   * @param chapter - Chapter number
+   * @param verse - Verse number
+   * @returns Promise with an array of knowledge cards
+   * @throws Error if the API request fails
+   */
   async getVerseKnowledgeCards(book: string, chapter: number, verse: number): Promise<KnowledgeCard[]> {
     try {
-      const response = await apiClient.get<KnowledgeCard[]>(ENDPOINTS.VERSE_KNOWLEDGE_CARDS(book, chapter, verse));
+      const token = localStorage.getItem('bibleGraph_token');
+      if (!token) {
+        console.log('Authentication required to fetch knowledge cards');
+        return []; // Return empty array when token is not available
+      }
+      
+      const response = await apiClient.get<KnowledgeCard[]>(
+        ENDPOINTS.VERSE_KNOWLEDGE_CARDS(book, chapter, verse)
+      );
       return response.data;
     } catch (error) {
+      if (axios.isAxiosError(error) && error.response?.status === 401) {
+        console.log('Authentication required to fetch knowledge cards');
+        return []; // Return empty array on authentication error
+      }
       console.error('Error fetching verse knowledge cards:', error);
       throw error;
     }
@@ -460,34 +510,6 @@ export const bibleApi = {
   // Check if user is authenticated
   isAuthenticated(): boolean {
     return !!localStorage.getItem('bibleGraph_token');
-  },
-
-  /**
-   * Fetch graph data with knowledge cards
-   * 
-   * @param book - Optional book filter
-   * @param chapter - Optional chapter filter
-   * @param verse - Optional verse filter
-   * @param includeKnowledgeCards - Whether to include knowledge cards in the graph
-   * @param limit - Maximum number of results to return
-   * @returns Promise with structured graph data including knowledge cards if requested
-   * @throws Error if the API request fails
-   */
-  async getGraphDataWithKnowledgeCards(
-    book?: string, 
-    chapter?: number, 
-    verse?: number, 
-    includeKnowledgeCards: boolean = true,
-    limit: number = 100
-  ): Promise<any> {
-    try {
-      const url = ENDPOINTS.GRAPH_DATA_WITH_PARAMS(book, chapter, verse, includeKnowledgeCards, limit);
-      const response = await apiClient.get(url);
-      return response.data;
-    } catch (error) {
-      console.error('Error fetching graph data with knowledge cards:', error);
-      throw error;
-    }
   },
 
   /**
@@ -509,10 +531,23 @@ export const bibleApi = {
     limit: number = 100
   ): Promise<KnowledgeGraphData> {
     try {
+      // Check authentication status
+      const token = localStorage.getItem('bibleGraph_token');
+      if (!token) {
+        console.log('Authentication required to fetch knowledge graph');
+        // Return empty graph structure
+        return { nodes: [], edges: [] };
+      }
+      
       const url = ENDPOINTS.KNOWLEDGE_GRAPH_WITH_PARAMS(book, chapter, verse, depth, limit);
       const response = await apiClient.get<KnowledgeGraphData>(url);
       return response.data;
     } catch (error) {
+      if (axios.isAxiosError(error) && error.response?.status === 401) {
+        console.log('Authentication required to fetch knowledge graph');
+        // Return empty graph structure on authentication error
+        return { nodes: [], edges: [] };
+      }
       console.error('Error fetching knowledge graph:', error);
       throw error;
     }
